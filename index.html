@@ -1,24 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Weekly Meal Planner</title>
-  <!-- Tailwind / Styling optional -->
-</head>
-<body>
-  <div id="root"></div>
 
-  <!-- React & ReactDOM CDN -->
+  <!-- React (development builds) -->
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 
-  <!-- Firebase CDN -->
+  <!-- Firebase (compat mode so your old API works) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
-  <!-- Your script -->
+  <!-- Babel (required to compile JSX in mealPlanner.js) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #fafafa;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- React root element -->
+  <div id="root"></div>
+
+  <!-- Your React + JSX application -->
   <script type="text/babel" src="mealPlanner.js"></script>
 </body>
 </html>

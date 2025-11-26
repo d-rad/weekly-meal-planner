@@ -44,6 +44,8 @@ function MealPlanner() {
     lunch: false
   });
 
+  const inputRefs = React.useRef([]);
+
   const allLoaded = dataLoaded.week && dataLoaded.ideas && dataLoaded.lunch;
 
   // Convert Firebase object into array
@@ -152,6 +154,15 @@ const clearMeal = (index) => {
     setDraggedIdeaIndex(index);
   };
 
+  const handleEnterKey = (e, index) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+
+    const nextInput = inputRefs.current[index + 1];
+    if (nextInput) nextInput.focus();
+  }
+};
+
   const handleDragOver = (e) => e.preventDefault();
 
   const handleDrop = (index) => {
@@ -190,7 +201,7 @@ const clearMeal = (index) => {
       boxSizing: 'border-box'
     }}>
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
-        <div style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 10px)' }}>
+        <div style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 13px)' }}>
           {/* LEFT COLUMN */}
           <div style={{
             width: '50%', background: 'white', borderRadius: '8px',
@@ -255,9 +266,11 @@ const clearMeal = (index) => {
 
 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
   <input
+    ref={el => inputRefs.current[index] = el}
     type="text"
     value={day.meal}
     onChange={(e) => updateMeal(index, e.target.value)}
+    onKeyDown={(e) => handleEnterKey(e, index)}
     style={{
       flex: 1,
       padding: '6px 8px',
@@ -269,6 +282,7 @@ const clearMeal = (index) => {
     }}
   />
   <button
+    tabindex="-1"
     onClick={() => clearMeal(index)}
     style={{
       background: '#ef4444',
