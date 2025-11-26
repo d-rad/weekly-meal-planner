@@ -45,6 +45,11 @@ function MealPlanner() {
   });
 
   const inputRefs = React.useRef([]);
+  
+  const handleDragEnd = () => {
+  setDraggedIdea(null);
+  setDraggedIdeaIndex(null);
+};
 
   const allLoaded = dataLoaded.week && dataLoaded.ideas && dataLoaded.lunch;
 
@@ -327,6 +332,7 @@ const clearMeal = (index) => {
                     key={index}
                     draggable
                     onDragStart={() => handleDragStart(idea, index)}
+                    onDragEnd={handleDragEnd}
                     style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                       background: '#dcfce7', padding: '8px', borderRadius: '6px',
