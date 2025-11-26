@@ -202,7 +202,7 @@ const clearMeal = (index) => {
     <div style={{
       minHeight: '100vh',
       background: 'linear-gradient(to bottom right, #ffedd5, #fef3c7)',
-      padding: '12px',
+      padding: '6px',
       boxSizing: 'border-box'
     }}>
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
