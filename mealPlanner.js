@@ -20,13 +20,13 @@ const database = firebase.database();
 
 function MealPlanner() {
   const [currentWeek, setCurrentWeek] = useState([
+	{ day: 'Sunday', meal: 'blame ai' },
     { day: 'Monday', meal: 'Uh Oh' },
     { day: 'Tuesday', meal: 'You should never see this' },
     { day: 'Wednesday', meal: 'looks like I made' },
     { day: 'Thursday', meal: 'stinky in my pants' },
     { day: 'Friday', meal: 'sowwy :3' },
-    { day: 'Saturday', meal: 'im just a baby' },
-    { day: 'Sunday', meal: 'blame ai' }
+    { day: 'Saturday', meal: 'im just a baby' }    
   ]);
 
   const [ideas, setIdeas] = useState([]);
