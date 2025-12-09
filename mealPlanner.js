@@ -1,7 +1,6 @@
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 /* TODO:
     - lunch meal prep suggestions -> make them go up or add padding for when they go down
-    - fix dragging behavior for meals on iphone
     - add ability to view all/sort dinner & lunch ideas based on search/ingredients/proteins/carbs
     - add gui for adding/editing "recipes" of meals
     - create elements for "recipe": prep time, protein, ingredients, instructions
@@ -25,7 +24,7 @@ if (!firebase.apps.length) {
 const database = firebase.database();
 
 function MealPlanner() {
-  // NEW: Helper function to convert to Start Case
+  // Helper: convert to Start Case / Title Case
   const toStartCase = (str) => {
     return str
       .toLowerCase()
@@ -52,8 +51,19 @@ function MealPlanner() {
   const [newIdea, setNewIdea] = useState('');
   const [newLunchItem, setNewLunchItem] = useState('');
 
+  // desktop drag states
   const [draggedIdea, setDraggedIdea] = useState(null);
   const [draggedIdeaIndex, setDraggedIdeaIndex] = useState(null);
+
+  // placement mode (long-press)
+  const [selectedIdeaForPlacement, setSelectedIdeaForPlacement] = useState(null);
+  const [selectedIdeaIndexForPlacement, setSelectedIdeaIndexForPlacement] = useState(null);
+
+  const longPressTimer = useRef(null);
+
+  const inputRefs = React.useRef([]);
+  const suggestionsRef = React.useRef(null);
+  const lunchSuggestionsRef = React.useRef(null);
 
   const [dataLoaded, setDataLoaded] = useState({
     week: false,
@@ -69,10 +79,6 @@ function MealPlanner() {
   const [showLunchSuggestions, setShowLunchSuggestions] = useState(false);
   const [filteredLunchSuggestions, setFilteredLunchSuggestions] = useState([]);
 
-  const inputRefs = React.useRef([]);
-  const suggestionsRef = React.useRef(null);
-  const lunchSuggestionsRef = React.useRef(null);
-  
   const handleDragEnd = () => {
     setDraggedIdea(null);
     setDraggedIdeaIndex(null);
@@ -80,7 +86,7 @@ function MealPlanner() {
 
   const allLoaded = dataLoaded.week && dataLoaded.ideas && dataLoaded.lunch && dataLoaded.history && dataLoaded.lunchHistory;
 
-  // Convert Firebase object into array
+  // Convert Firebase object into array (robust)
   const objectToArray = (obj) => {
     if (!obj) return [];
     if (Array.isArray(obj)) {
@@ -89,15 +95,14 @@ function MealPlanner() {
     return Object.values(obj).filter((item) => item !== null && item !== undefined && item !== '');
   };
 
-  // Add meal to history with case-insensitive check
+  // Add meal to history with case-insensitive duplicate prevention
   const addToMealHistory = (meal) => {
     if (!meal || meal.trim() === '') return;
     
     const trimmedMeal = meal.trim();
-    const startCaseMeal = toStartCase(trimmedMeal); // NEW: Convert to Start Case
+    const startCaseMeal = toStartCase(trimmedMeal);
     const cleanHistory = mealHistory.filter(item => item !== null && item !== undefined && item !== '');
     
-    // NEW: Check if exists (case-insensitive)
     const existsInHistory = cleanHistory.some(item => item.toLowerCase() === startCaseMeal.toLowerCase());
     if (existsInHistory) return;
     
@@ -106,15 +111,14 @@ function MealPlanner() {
     database.ref('mealPlanner/mealHistory').set(updatedHistory);
   };
 
-  // Add lunch item to history with case-insensitive check
+  // Add lunch item to history
   const addToLunchHistory = (item) => {
     if (!item || item.trim() === '') return;
     
     const trimmedItem = item.trim();
-    const startCaseItem = toStartCase(trimmedItem); // NEW: Convert to Start Case
+    const startCaseItem = toStartCase(trimmedItem);
     const cleanHistory = lunchHistory.filter(i => i !== null && i !== undefined && i !== '');
     
-    // NEW: Check if exists (case-insensitive)
     const existsInHistory = cleanHistory.some(i => i.toLowerCase() === startCaseItem.toLowerCase());
     if (existsInHistory) return;
     
@@ -123,7 +127,7 @@ function MealPlanner() {
     database.ref('mealPlanner/lunchHistory').set(updatedHistory);
   };
 
-  // Load all DB data
+  // Load all DB data once (initial load)
   useEffect(() => {
     const weekRef = database.ref('mealPlanner/currentWeek');
     const ideasRef = database.ref('mealPlanner/ideas');
@@ -162,7 +166,7 @@ function MealPlanner() {
     });
   }, []);
 
-  // Detect clicks outside suggestions dropdown
+  // Detect clicks outside suggestions dropdown to close them
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (suggestionsRef.current && !suggestionsRef.current.contains(event.target)) {
@@ -177,7 +181,7 @@ function MealPlanner() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Save back to Firebase ONLY after all sections are loaded
+  // Save back to Firebase ONLY after all sections are loaded (prevents overwrites during initial load)
   useEffect(() => {
     if (allLoaded) {
       database.ref('mealPlanner/currentWeek').set(currentWeek);
@@ -273,24 +277,34 @@ function MealPlanner() {
     setShowLunchSuggestions(filtered.length > 0);
   };
 
-  // Select a suggestion
+  // When user selects suggestion from dropdown: auto-submit into ideas (dinner)
   const selectSuggestion = (suggestion) => {
-    setNewIdea(suggestion);
+    if (!suggestion || !suggestion.trim()) return;
+    const startCaseIdea = toStartCase(suggestion.trim());
+    setIdeas(prev => [...prev, startCaseIdea]);
+    addToMealHistory(startCaseIdea);
+    
+    setNewIdea('');
     setShowSuggestions(false);
     setFilteredSuggestions([]);
   };
 
-  // Select a lunch suggestion
+  // When user selects suggestion for lunch: auto-submit into lunchPrep
   const selectLunchSuggestion = (suggestion) => {
-    setNewLunchItem(suggestion);
+    if (!suggestion || !suggestion.trim()) return;
+    const startCaseItem = toStartCase(suggestion.trim());
+    setLunchPrep(prev => [...prev, startCaseItem]);
+    addToLunchHistory(startCaseItem);
+
+    setNewLunchItem('');
     setShowLunchSuggestions(false);
     setFilteredLunchSuggestions([]);
   };
 
   const addIdea = () => {
     if (newIdea.trim()) {
-      const startCaseIdea = toStartCase(newIdea.trim()); // NEW: Convert to Start Case
-      setIdeas([...ideas, startCaseIdea]);
+      const startCaseIdea = toStartCase(newIdea.trim());
+      setIdeas(prev => [...prev, startCaseIdea]);
       addToMealHistory(startCaseIdea);
       setNewIdea('');
       setShowSuggestions(false);
@@ -299,13 +313,21 @@ function MealPlanner() {
   };
 
   const removeIdea = (index) => {
-    setIdeas(ideas.filter((_, i) => i !== index));
+    setIdeas(prev => prev.filter((_, i) => i !== index));
+    // if the removed one was selected for placement, clear selection
+    if (selectedIdeaIndexForPlacement === index) {
+      setSelectedIdeaForPlacement(null);
+      setSelectedIdeaIndexForPlacement(null);
+    } else if (selectedIdeaIndexForPlacement !== null && selectedIdeaIndexForPlacement > index) {
+      // if removing earlier item, shift selected index down to stay in sync
+      setSelectedIdeaIndexForPlacement((idx) => (idx === null ? null : idx - 1));
+    }
   };
 
   const addLunchItem = () => {
     if (newLunchItem.trim()) {
-      const startCaseItem = toStartCase(newLunchItem.trim()); // NEW: Convert to Start Case
-      setLunchPrep([...lunchPrep, startCaseItem]);
+      const startCaseItem = toStartCase(newLunchItem.trim());
+      setLunchPrep(prev => [...prev, startCaseItem]);
       addToLunchHistory(startCaseItem);
       setNewLunchItem('');
       setShowLunchSuggestions(false);
@@ -318,7 +340,7 @@ function MealPlanner() {
     if (item && item.trim() !== '') {
       addToLunchHistory(item);
     }
-    setLunchPrep(lunchPrep.filter((_, i) => i !== index));
+    setLunchPrep(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleDragStart = (idea, index) => {
@@ -355,8 +377,101 @@ function MealPlanner() {
     }
   };
 
-  // ----------- Loading Screen -----------
+  // ----------- LONG-PRESS SELECTION LOGIC (for mobile/touch) -----------
 
+  const startLongPress = (idea, index, e) => {
+    // Prevent default on touch to stop text selection / callouts
+    if (e && e.type && e.type.startsWith('touch')) {
+      e.preventDefault();
+    }
+
+    // Clear any existing timer
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+
+    longPressTimer.current = setTimeout(() => {
+      setSelectedIdeaForPlacement(idea);
+      setSelectedIdeaIndexForPlacement(index);
+      longPressTimer.current = null;
+    }, 500); // 500ms long-press
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    // do not clear selectedIdea here; selection persists until placement or explicit cancel
+  };
+
+  // When a day is clicked/tapped, if there's a selected idea for placement, assign it
+  const handleDayClick = (index) => {
+    if (selectedIdeaForPlacement !== null) {
+      const oldMeal = currentWeek[index].meal;
+      if (oldMeal && oldMeal.trim() !== '') {
+        addToMealHistory(oldMeal);
+      }
+
+      updateMeal(index, selectedIdeaForPlacement);
+
+      // remove idea from ideas list if it was placed (use saved index if possible)
+      if (selectedIdeaIndexForPlacement !== null && selectedIdeaIndexForPlacement >= 0 && selectedIdeaIndexForPlacement < ideas.length) {
+        removeIdea(selectedIdeaIndexForPlacement);
+      } else {
+        // fallback: remove first matching idea by exact string match
+        const idx = ideas.indexOf(selectedIdeaForPlacement);
+        if (idx !== -1) removeIdea(idx);
+      }
+
+      // clear selection afterward
+      setSelectedIdeaForPlacement(null);
+      setSelectedIdeaIndexForPlacement(null);
+    }
+  };
+
+  // Cancel placement mode explicitly
+  const cancelPlacement = () => {
+    setSelectedIdeaForPlacement(null);
+    setSelectedIdeaIndexForPlacement(null);
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  // Pressing Escape cancels selection (desktop)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') cancelPlacement();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Cancel placement when clicking blank space (but ignore clicks inside days, ideas, inputs, or suggestion dropdowns)
+  useEffect(() => {
+    const cancelOnOutsideClick = (e) => {
+      if (!selectedIdeaForPlacement) return;
+
+      const dayBox = e.target.closest("[data-day-index]");
+      const ideaBox = e.target.closest("[data-idea-index]");
+      const inputs = e.target.closest("input, textarea");
+      const suggestions = e.target.closest(".suggestions-dropdown");
+
+      if (dayBox || ideaBox || inputs || suggestions) return;
+
+      // otherwise cancel
+      setSelectedIdeaForPlacement(null);
+      setSelectedIdeaIndexForPlacement(null);
+    };
+
+    document.addEventListener("click", cancelOnOutsideClick);
+    return () => document.removeEventListener("click", cancelOnOutsideClick);
+  }, [selectedIdeaForPlacement]);
+
+  // ----------- Loading Screen -----------
   if (!allLoaded) {
     return (
       <div style={{
@@ -369,7 +484,6 @@ function MealPlanner() {
   }
 
   // ----------- UI -----------
-
   return (
     <div style={{
       minHeight: '100vh',
@@ -379,6 +493,7 @@ function MealPlanner() {
     }}>
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 13px)' }}>
+
           {/* LEFT COLUMN */}
           <div style={{
             width: '50%', background: 'white', borderRadius: '8px',
@@ -403,27 +518,57 @@ function MealPlanner() {
                 This Week's Dinners
               </h2>
 
-              <button
-                onClick={clearAllMeals}
-                style={{
-                  background: '#f87171',
-                  color: 'white',
-                  border: 'none',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: '600'
-                }}
-              >
-                Clear All
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {selectedIdeaForPlacement && (
+                  <div style={{
+                    padding: '6px 8px',
+                    background: '#fff7ed',
+                    border: '1px dashed #fb923c',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    color: '#92400e'
+                  }}>
+                    Placing: {selectedIdeaForPlacement}
+                    <button
+                      onClick={cancelPlacement}
+                      style={{
+                        marginLeft: '8px',
+                        background: 'none',
+                        border: 'none',
+                        color: '#ef4444',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  onClick={clearAllMeals}
+                  style={{
+                    background: '#f87171',
+                    color: 'white',
+                    border: 'none',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {currentWeek.map((day, index) => (
                 <div
                   key={index}
+                  data-day-index={index}
+                  onClick={() => handleDayClick(index)}
                   onDragOver={handleDragOver}
                   onDrop={() => handleDrop(index)}
                   style={{
@@ -431,7 +576,8 @@ function MealPlanner() {
                     padding: '8px', marginBottom: '6px',
                     border: draggedIdea
                       ? '2px dashed #fb923c'
-                      : '2px solid transparent'
+                      : '2px solid transparent',
+                    cursor: selectedIdeaForPlacement ? 'pointer' : 'default'
                   }}
                 >
                   <label style={{
@@ -499,31 +645,59 @@ function MealPlanner() {
               </h2>
 
               <div style={{ flex: 1, overflowY: 'auto', marginBottom: '8px' }}>
-                {ideas.map((idea, index) => (
-                  <div
-                    key={index}
-                    draggable
-                    onDragStart={() => handleDragStart(idea, index)}
-                    onDragEnd={handleDragEnd}
-                    style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      background: '#dcfce7', padding: '8px', borderRadius: '6px',
-                      marginBottom: '6px', cursor: 'move'
-                    }}
-                  >
-                    <span>{idea}</span>
+                {ideas.map((idea, index) => {
+                  const isSelected = selectedIdeaForPlacement !== null && selectedIdeaIndexForPlacement === index;
+                  return (
+                    <div
+                      key={index}
+                      data-idea-index={index}
+                      draggable
+                      onDragStart={() => handleDragStart(idea, index)}
+                      onDragEnd={handleDragEnd}
 
-                    <button
-                      onClick={() => removeIdea(index)}
+                      // long-press (mouse) start
+                      onMouseDown={(e) => {
+                        if (e.button === 0) startLongPress(idea, index, e);
+                      }}
+                      onMouseUp={(e) => {
+                        cancelLongPress();
+                      }}
+                      onMouseLeave={() => cancelLongPress()}
+
+                      // touch handlers for long-press (prevent default to avoid highlight/callout)
+                      onTouchStart={(e) => startLongPress(idea, index, e)}
+                      onTouchEnd={(e) => {
+                        // release before timer cancels; selection persists if timer had fired
+                        cancelLongPress();
+                      }}
+                      onTouchCancel={() => cancelLongPress()}
+
                       style={{
-                        background: 'none', border: 'none',
-                        color: '#ef4444', fontSize: '22px', cursor: 'pointer'
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        background: isSelected ? '#bbf7d0' : '#dcfce7', padding: '8px', borderRadius: '6px',
+                        marginBottom: '6px', cursor: 'move',
+                        boxShadow: isSelected ? 'inset 0 0 0 2px #34d399' : 'none',
+                        // Prevent text selection and touch callouts on long-press
+                        userSelect: 'none',
+                        WebkitUserSelect: 'none',
+                        WebkitTouchCallout: 'none',
+                        msUserSelect: 'none',
                       }}
                     >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                      <span>{idea}</span>
+
+                      <button
+                        onClick={() => removeIdea(index)}
+                        style={{
+                          background: 'none', border: 'none',
+                          color: '#ef4444', fontSize: '22px', cursor: 'pointer'
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Autocomplete input container */}
@@ -561,28 +735,31 @@ function MealPlanner() {
 
                 {/* Suggestions dropdown */}
                 {showSuggestions && filteredSuggestions.length > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: '52px',
-                    marginTop: '4px',
-                    background: 'white',
-                    border: '1px solid #bbf7d0',
-                    borderRadius: '6px',
-                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                    maxHeight: '200px',
-                    overflowY: 'auto',
-                    zIndex: 1000
-                  }}>
-                    {filteredSuggestions.map((suggestion, index) => (
+                  <div
+                    className="suggestions-dropdown"
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: '52px',
+                      marginTop: '4px',
+                      background: 'white',
+                      border: '1px solid #bbf7d0',
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      zIndex: 1000
+                    }}
+                  >
+                    {filteredSuggestions.map((suggestion, idx) => (
                       <div
-                        key={index}
+                        key={idx}
                         onClick={() => selectSuggestion(suggestion)}
                         style={{
                           padding: '8px 10px',
                           cursor: 'pointer',
-                          borderBottom: index < filteredSuggestions.length - 1 ? '1px solid #f0f0f0' : 'none',
+                          borderBottom: idx < filteredSuggestions.length - 1 ? '1px solid #f0f0f0' : 'none',
                           fontSize: '14px',
                           color: '#1f2937'
                         }}
@@ -618,7 +795,10 @@ function MealPlanner() {
                     style={{
                       display: 'flex', justifyContent: 'space-between',
                       background: '#dbeafe', padding: '6px 8px',
-                      borderRadius: '6px', marginBottom: '6px'
+                      borderRadius: '6px', marginBottom: '6px',
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
+                      WebkitTouchCallout: 'none',
                     }}
                   >
                     <span>{item}</span>
@@ -667,28 +847,31 @@ function MealPlanner() {
 
                 {/* Suggestions dropdown for lunch */}
                 {showLunchSuggestions && filteredLunchSuggestions.length > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: '52px',
-                    marginTop: '4px',
-                    background: 'white',
-                    border: '1px solid #bfdbfe',
-                    borderRadius: '6px',
-                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                    maxHeight: '150px',
-                    overflowY: 'auto',
-                    zIndex: 1000
-                  }}>
-                    {filteredLunchSuggestions.map((suggestion, index) => (
+                  <div
+                    className="suggestions-dropdown"
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: '52px',
+                      marginTop: '4px',
+                      background: 'white',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                      maxHeight: '150px',
+                      overflowY: 'auto',
+                      zIndex: 1000
+                    }}
+                  >
+                    {filteredLunchSuggestions.map((suggestion, idx) => (
                       <div
-                        key={index}
+                        key={idx}
                         onClick={() => selectLunchSuggestion(suggestion)}
                         style={{
                           padding: '6px 8px',
                           cursor: 'pointer',
-                          borderBottom: index < filteredLunchSuggestions.length - 1 ? '1px solid #f0f0f0' : 'none',
+                          borderBottom: idx < filteredLunchSuggestions.length - 1 ? '1px solid #f0f0f0' : 'none',
                           fontSize: '13px',
                           color: '#1f2937'
                         }}
