@@ -1,6 +1,5 @@
 const { useState, useEffect, useRef } = React;
 /* TODO:
-    - lunch meal prep suggestions -> make them go up or add padding for when they go down
     - add ability to view all/sort dinner & lunch ideas based on search/ingredients/proteins/carbs
     - add gui for adding/editing "recipes" of meals
     - create elements for "recipe": prep time, protein, ingredients, instructions
@@ -851,10 +850,10 @@ function MealPlanner() {
                     className="suggestions-dropdown"
                     style={{
                       position: 'absolute',
-                      top: '100%',
+                      bottom: '100%',
                       left: 0,
                       right: '52px',
-                      marginTop: '4px',
+                      marginBottom: '4px',
                       background: 'white',
                       border: '1px solid #bfdbfe',
                       borderRadius: '6px',
