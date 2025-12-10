@@ -5,7 +5,8 @@ const { useState, useEffect, useRef } = React;
 	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
 	- separate recipes for lunch/dinners
 	- add number of people fed with recipe
-	- if it's being dragged on desktop, don't enter assignment mode
+	- make recipe popup scrollable to indicate more controls at top/bottom for small screens (mobile)
+	- fix scroll bar in cook/prep time selection
 */
 // Firebase Config
 const firebaseConfig = {
@@ -25,6 +26,142 @@ if (!firebase.apps.length) {
 }
 const database = firebase.database();
 
+// ---- PickerWheel component ----
+function PickerWheel({ value, onChange, min = 0, max = 240, step = 5, label = '' }) {
+  const containerRef = React.useRef(null);
+
+  const options = React.useMemo(() => {
+    const arr = [];
+    for (let i = min; i <= max; i += step) arr.push(i);
+    return arr;
+  }, [min, max, step]);
+
+  const OPTION_HEIGHT = 24;
+  const VISIBLE_ROWS = 3;
+  const WHEEL_HEIGHT = OPTION_HEIGHT * 3;
+  const selectedIndex = Math.max(0, options.indexOf(Number(value)));
+
+  // Scroll to selected value on load
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    const idx = options.indexOf(Number(value));
+    if (idx >= 0) {
+      containerRef.current.scrollTo({ top: idx * OPTION_HEIGHT, behavior: "smooth" });
+    }
+  }, [value, options]);
+
+  // Snap to nearest option when scroll stops
+  const snapToIndex = (idx) => {
+    idx = Math.max(0, Math.min(idx, options.length - 1));
+    const snappedValue = options[idx];
+    if (snappedValue !== Number(value)) onChange(snappedValue);
+    if (containerRef.current) {
+      containerRef.current.scrollTo({
+        top: idx * OPTION_HEIGHT,
+        behavior: "smooth"
+      });
+    }
+  };
+
+  const handleScroll = () => {
+    if (!containerRef.current) return;
+    if (containerRef.current._timeout) clearTimeout(containerRef.current._timeout);
+    containerRef.current._timeout = setTimeout(() => {
+      const idx = Math.round(containerRef.current.scrollTop / OPTION_HEIGHT);
+      snapToIndex(idx);
+    }, 80);
+  };
+
+  const tapSelect = (targetIdx) => {
+    snapToIndex(targetIdx);
+  };
+
+  return (
+    <div style={{ width: '100%', marginBottom: '14px' }}>
+      {label && (
+        <div style={{
+          fontSize: 14,
+          fontWeight: 600,
+          marginBottom: 6,
+          color: '#374151'
+        }}>{label}</div>
+      )}
+
+      <div style={{
+        height: WHEEL_HEIGHT,
+        overflow: 'hidden',
+        position: 'relative',
+        borderRadius: 8,
+        border: '1px solid #d1d5db',
+        background: 'white'
+      }}>
+        {/* Highlighted center row */}
+		<div
+		  style={{
+			position: 'absolute',
+			top: OPTION_HEIGHT + 1,
+			left: '10%',
+			right: '10%',
+			height: OPTION_HEIGHT - 3,
+			background: 'rgba(99,102,241,0.15)',   // soft indigo tint like iOS control center
+			borderRadius: 12,
+			pointerEvents: "none",
+			zIndex: 2,
+		  }}
+		/>
+
+
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          style={{
+            height: '100%',
+            overflowY: 'scroll',
+            paddingTop: OPTION_HEIGHT,
+            paddingBottom: OPTION_HEIGHT,
+            scrollSnapType: 'y mandatory',
+            WebkitOverflowScrolling: 'touch'
+          }}
+        >
+          {options.map((opt, idx) => {
+            const isSelected = opt === Number(value);
+            const isAbove = idx === selectedIndex - 1;
+            const isBelow = idx === selectedIndex + 1;
+
+            return (
+              <div
+                key={opt}
+                style={{
+                  height: OPTION_HEIGHT,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  userSelect: 'none',
+                  fontSize: isSelected ? 18 : 15,
+                  fontWeight: isSelected ? 700 : 400,
+                  color: isSelected ? '#111827' : '#6b7280',
+                  opacity: isSelected ? 1 : 0.75,
+                  scrollSnapAlign: 'center',
+                  cursor: (isAbove || isBelow) ? 'pointer' : 'default'
+                }}
+
+                onClick={() => {
+                  if (isAbove) tapSelect(selectedIndex - 1);
+                  if (isBelow) tapSelect(selectedIndex + 1);
+                }}
+              >
+                {opt} min
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- end PickerWheel ----
+
 function MealPlanner() {
   // Helper: convert to Start Case / Title Case
   const toStartCase = (str) => {
@@ -34,6 +171,41 @@ function MealPlanner() {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
   };
+
+	  // Parse a variety of time strings into minutes (number)
+  const parseTimeToMinutes = (input) => {
+    if (input === null || input === undefined) return 0;
+    if (typeof input === 'number') return input;
+    let s = String(input).trim().toLowerCase();
+
+    // common formats:
+    // "45", "45m", "45 min", "45 minutes", "1:15", "1h 15m", "1 hr 15 min"
+    // try "HH:MM"
+    const hhmm = s.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (hhmm) {
+      const h = parseInt(hhmm[1], 10);
+      const m = parseInt(hhmm[2], 10);
+      return h * 60 + m;
+    }
+
+    // match hours and minutes text
+    const hrMatch = s.match(/(\d+)\s*h/);
+    const minMatch = s.match(/(\d+)\s*m/);
+    if (hrMatch || minMatch) {
+      const hrs = hrMatch ? parseInt(hrMatch[1], 10) : 0;
+      const mins = minMatch ? parseInt(minMatch[1], 10) : 0;
+      return hrs * 60 + mins;
+    }
+
+    // plain number in minutes e.g. "45" or "45 minutes"
+    const numMatch = s.match(/(\d+)/);
+    if (numMatch) {
+      return parseInt(numMatch[1], 10);
+    }
+
+    return 0;
+  };
+
 
   const [currentWeek, setCurrentWeek] = useState([
     { day: 'Sunday', meal: 'blame ai' },
@@ -49,10 +221,15 @@ function MealPlanner() {
   const [lunchPrep, setLunchPrep] = useState([]);
   const [mealHistory, setMealHistory] = useState([]);
   const [lunchHistory, setLunchHistory] = useState([]);
-  const [recipes, setRecipes] = useState({}); // NEW: Store recipes keyed by meal name
+  const [recipes, setRecipes] = useState({});
 
   const [newIdea, setNewIdea] = useState('');
   const [newLunchItem, setNewLunchItem] = useState('');
+
+  const isTouchDevice = (typeof window !== 'undefined') && (
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0
+  );
 
   // desktop drag states
   const [draggedIdea, setDraggedIdea] = useState(null);
@@ -62,10 +239,11 @@ function MealPlanner() {
   const [selectedIdeaForPlacement, setSelectedIdeaForPlacement] = useState(null);
   const [selectedIdeaIndexForPlacement, setSelectedIdeaIndexForPlacement] = useState(null);
 
-  // NEW: Recipe modal state
+  // Recipe modal state
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [currentRecipeMeal, setCurrentRecipeMeal] = useState('');
   const [currentRecipe, setCurrentRecipe] = useState({
+	cookTime: '',
     prepTime: '',
     protein: '',
     ingredients: '',
@@ -142,7 +320,7 @@ function MealPlanner() {
     database.ref('mealPlanner/lunchHistory').set(updatedHistory);
   };
 
-  // NEW: Open recipe modal for a specific meal
+  // Open recipe modal for a specific meal
   const openRecipeModal = (mealName) => {
     if (!mealName || !mealName.trim()) return;
     
@@ -151,6 +329,7 @@ function MealPlanner() {
     
     // Load existing recipe if it exists
     const existingRecipe = recipes[normalizedName] || {
+	  cookTime: '',
       prepTime: '',
       protein: '',
       ingredients: '',
@@ -160,7 +339,7 @@ function MealPlanner() {
     setShowRecipeModal(true);
   };
 
-  // NEW: Save recipe
+  // Save recipe
   const saveRecipe = () => {
     if (!currentRecipeMeal) return;
     
@@ -174,11 +353,12 @@ function MealPlanner() {
     setShowRecipeModal(false);
   };
 
-  // NEW: Close modal without saving
+  // Close modal without saving
   const closeRecipeModal = () => {
     setShowRecipeModal(false);
     setCurrentRecipeMeal('');
     setCurrentRecipe({
+	  cookTime: '',
       prepTime: '',
       protein: '',
       ingredients: '',
@@ -225,7 +405,7 @@ function MealPlanner() {
       setDataLoaded((prev) => ({ ...prev, lunchHistory: true }));
     });
 
-    // NEW: Load recipes
+    // Load recipes
     recipesRef.once('value', (snapshot) => {
       const data = snapshot.val();
       if (data) setRecipes(data);
@@ -492,6 +672,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
   // ----------- LONG-PRESS SELECTION LOGIC (for mobile/touch) -----------
 
   const startLongPress = (idea, index, e) => {
+	if (e.type === 'mousedown') return;
     if (e && e.type && e.type.startsWith('touch')) {
       e.preventDefault();
     }
@@ -504,6 +685,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
     longPressTimer.current = setTimeout(() => {
       setSelectedIdeaForPlacement(idea);
       setSelectedIdeaIndexForPlacement(index);
+
       longPressTimer.current = null;
     }, 500);
   };
@@ -549,7 +731,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
     const onKey = (e) => {
       if (e.key === 'Escape') {
         cancelPlacement();
-        if (showRecipeModal) closeRecipeModal(); // NEW: Also close modal on Escape
+        if (showRecipeModal) closeRecipeModal(); // Also close modal on Escape
       }
     };
     window.addEventListener('keydown', onKey);
@@ -595,7 +777,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
       padding: '6px',
       boxSizing: 'border-box'
     }}>
-      {/* NEW: Recipe Modal */}
+      {/* Recipe Modal */}
       {showRecipeModal && (
         <div style={{
           position: 'fixed',
@@ -627,26 +809,29 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
             <h2 style={{ margin: '0 0 16px 0', fontSize: '24px', fontWeight: 'bold', color: '#1f2937' }}>
               Recipe: {currentRecipeMeal}
             </h2>
+			
+			<div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+			  <div style={{ flex: 1 }}>
+				<PickerWheel
+				  label="Cook Time"
+				  value={parseTimeToMinutes(currentRecipe.cookTime)}
+				  onChange={(minutes) => 
+					setCurrentRecipe({ ...currentRecipe, cookTime: String(minutes) })
+				  }
+				/>
+			  </div>
 
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
-                Prep Time
-              </label>
-              <input
-                type="text"
-                value={currentRecipe.prepTime}
-                onChange={(e) => setCurrentRecipe({ ...currentRecipe, prepTime: e.target.value })}
-                placeholder="e.g., 30 minutes"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+			  <div style={{ flex: 1 }}>
+				<PickerWheel
+				  label="Prep Time"
+				  value={parseTimeToMinutes(currentRecipe.prepTime)}
+				  onChange={(minutes) =>
+					setCurrentRecipe({ ...currentRecipe, prepTime: String(minutes) })
+				  }
+				/>
+			  </div>
+			</div>
+
 
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', fontWeight: '600', marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
@@ -656,7 +841,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
                 type="text"
                 value={currentRecipe.protein}
                 onChange={(e) => setCurrentRecipe({ ...currentRecipe, protein: e.target.value })}
-                placeholder="e.g., Chicken, Beef, Tofu"
+                placeholder="e.g. Chicken, Beef, Tofu"
                 style={{
                   width: '100%',
                   padding: '8px 12px',
@@ -937,8 +1122,12 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
       <div
         key={index}
         data-idea-index={index}
-        draggable
-        onDragStart={() => handleDragStart(idea, index)}
+        draggable={!isTouchDevice}
+        onDragStart={(e) => {
+		  cancelLongPress();
+		  handleDragStart(idea, index);
+		}}
+
         onDragEnd={handleDragEnd}
 
         onMouseDown={(e) => {
