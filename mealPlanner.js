@@ -1,10 +1,11 @@
 const { useState, useEffect, useRef } = React;
 /* TODO:
-    - add ability to view all/sort dinner & lunch ideas based on search/ingredients/proteins/carbs
+    - add ability to view & manage all/sort dinner & lunch ideas based on search/ingredients/proteins/carbs
     - fix layout on vertical phone orientation
 	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
-	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
-	- add a confirmation popup to "remove from history"
+	- separate recipes for lunch/dinners
+	- add number of people fed with recipe
+	- if it's being dragged on desktop, don't enter assignment mode
 */
 // Firebase Config
 const firebaseConfig = {
@@ -357,12 +358,16 @@ function MealPlanner() {
 
 // Remove item from meal history
 const removeFromMealHistory = (meal) => {
+const confirmRemoveMeal = window.confirm("Are you sure you want to remove " + meal + " from meal history?");
+    if (!confirmRemoveMeal) return;
   const normalizedMeal = toStartCase(meal.trim());
   const updatedHistory = mealHistory.filter(item => 
     toStartCase(item) !== normalizedMeal
   );
   setMealHistory(updatedHistory);
   database.ref('mealPlanner/mealHistory').set(updatedHistory);
+  setNewIdea('');
+  document.getElementById('ideafield').focus();
   
   // Update filtered suggestions
   const filtered = updatedHistory.filter(m => 
@@ -389,12 +394,16 @@ const removeFromMealHistory = (meal) => {
 
 // Remove item from lunch history
 const removeFromLunchHistory = (item) => {
+const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + item + " from meal history?");
+    if (!confirmRemoveLunch) return;
   const normalizedItem = toStartCase(item.trim());
   const updatedHistory = lunchHistory.filter(i => 
     toStartCase(i) !== normalizedItem
   );
   setLunchHistory(updatedHistory);
   database.ref('mealPlanner/lunchHistory').set(updatedHistory);
+  setNewLunchItem('');
+  document.getElementById('lunchfield').focus();
   
   // Update filtered suggestions
   const filtered = updatedHistory.filter(i => 
@@ -1007,7 +1016,7 @@ const removeFromLunchHistory = (item) => {
 
           <div style={{ position: 'relative' }} ref={suggestionsRef}>
             <div style={{ display: 'flex', gap: '6px' }}>
-              <input
+              <input id="ideafield"
                 type="text"
                 value={newIdea}
                 onChange={handleIdeaInputChange}
@@ -1177,7 +1186,7 @@ const removeFromLunchHistory = (item) => {
 
           <div style={{ position: 'relative' }} ref={lunchSuggestionsRef}>
             <div style={{ display: 'flex', gap: '6px' }}>
-              <input
+              <input id="lunchfield"
                 type="text"
                 value={newLunchItem}
                 onChange={handleLunchInputChange}
