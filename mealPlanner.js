@@ -3,6 +3,7 @@ const { useState, useEffect, useRef } = React;
     - add ability to view all/sort dinner & lunch ideas based on search/ingredients/proteins/carbs
     - add gui for adding/editing "recipes" of meals
     - create elements for "recipe": prep time, protein, ingredients, instructions
+    - fix layout on vertical phone orientation
 */
 // Firebase Config
 const firebaseConfig = {
