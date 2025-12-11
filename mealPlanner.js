@@ -1,10 +1,9 @@
 const { useState, useEffect, useRef } = React;
 /* TODO:
-    - add ability to view & manage all/sort dinner & lunch ideas based on search/ingredients/proteins/carbs
-    - fix layout on vertical phone orientation
+    - improve UI in meal history popup - fixed size based on display size, close button at bottom/x at top, shrink inline buttons, disallow horizontal scrolling outside of bounds, and stop going to text entry upon item removal
+		- for text entry default - may be linked to called methods removeFromLunchHistory/mealhistory. probably need to move this outside of function or base it on state of history modal being not open
 	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
 	- add number of people fed with recipe
-	- make recipe popup scrollable to indicate more controls at top/bottom for small screens (mobile)
 	- fix scroll bar in cook/prep time selection
 	- fix highlight bar in time section - add empty unselectable bottom at bottom and if last available time is selected scroll it to middle
 */
@@ -47,44 +46,53 @@ const pickerStyles = `
 function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = '' }) {
   const containerRef = React.useRef(null);
 
+  // Build [0, 5, 10, ..., 720]
   const options = React.useMemo(() => {
     const arr = [];
-    for (let i = min; i <= max; i += step) arr.push(i);
+    for (let v = min; v <= max; v += step) arr.push(v);
     return arr;
   }, [min, max, step]);
 
-  const OPTION_HEIGHT = 24;
-  const VISIBLE_ROWS = 3;
-  const WHEEL_HEIGHT = OPTION_HEIGHT * 3;
+  const OPTION_HEIGHT = 32;              // height of a single row, in px
+  const VISIBLE_ROWS = 3;                // show exactly 3 at a time
+  const WHEEL_HEIGHT = OPTION_HEIGHT * VISIBLE_ROWS;
+
+  // Find selected index
   const selectedIndex = Math.max(0, options.indexOf(Number(value)));
 
-  // Scroll to selected value on load
+  // Center the current value on mount / when value changes
   React.useEffect(() => {
-    if (!containerRef.current) return;
+    const el = containerRef.current;
+    if (!el) return;
     const idx = options.indexOf(Number(value));
-    if (idx >= 0) {
-      containerRef.current.scrollTo({ top: idx * OPTION_HEIGHT, behavior: "smooth" });
-    }
+    if (idx < 0) return;
+
+    const targetTop = idx * OPTION_HEIGHT;
+    el.scrollTo({ top: targetTop, behavior: 'auto' });
   }, [value, options]);
 
-  // Snap to nearest option when scroll stops
-  const snapToIndex = (idx) => {
-    idx = Math.max(0, Math.min(idx, options.length - 1));
+  const snapToIndex = (rawIdx) => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const maxIndex = options.length - 1;
+    const idx = Math.max(0, Math.min(rawIdx, maxIndex));
+
     const snappedValue = options[idx];
-    if (snappedValue !== Number(value)) onChange(snappedValue);
-    if (containerRef.current) {
-      containerRef.current.scrollTo({
-        top: idx * OPTION_HEIGHT,
-        behavior: "smooth"
-      });
+    if (snappedValue !== Number(value)) {
+      onChange(snappedValue);
     }
+
+    const targetTop = idx * OPTION_HEIGHT;
+    el.scrollTo({ top: targetTop, behavior: 'smooth' });
   };
 
   const handleScroll = () => {
-    if (!containerRef.current) return;
-    if (containerRef.current._timeout) clearTimeout(containerRef.current._timeout);
-    containerRef.current._timeout = setTimeout(() => {
-      const idx = Math.round(containerRef.current.scrollTop / OPTION_HEIGHT);
+    const el = containerRef.current;
+    if (!el) return;
+    if (el._timeout) clearTimeout(el._timeout);
+    el._timeout = setTimeout(() => {
+      const idx = Math.round(el.scrollTop / OPTION_HEIGHT);
       snapToIndex(idx);
     }, 80);
   };
@@ -94,55 +102,58 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
   };
 
   return (
-    <div style={{ width: '100%', marginBottom: '14px' }}>
+    <div style={{ width: '100%', marginBottom: 14 }}>
       {label && (
-        <div style={{
-          fontSize: 14,
-          fontWeight: 600,
-          marginBottom: 6,
-          color: '#374151'
-        }}>{label}</div>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            marginBottom: 6,
+            color: '#374151'
+          }}
+        >
+          {label}
+        </div>
       )}
 
-      <div style={{
-        height: WHEEL_HEIGHT,
-        overflow: 'hidden',
-        position: 'relative',
-        borderRadius: 8,
-        border: '1px solid #d1d5db',
-        background: 'white'
-      }}>
-        {/* Highlighted center row */}
-		<div
-		  style={{
-			position: 'absolute',
-			top: OPTION_HEIGHT + 1,
-			left: '10%',
-			right: '10%',
-			height: OPTION_HEIGHT - 3,
-			background: 'rgba(99,102,241,0.15)',   // soft indigo tint like iOS control center
-			borderRadius: 12,
-			pointerEvents: "none",
-			zIndex: 2,
-		  }}
-		/>
-
+      <div
+        style={{
+          height: WHEEL_HEIGHT,        // exactly 3 rows tall
+          overflow: 'hidden',
+          position: 'relative',
+          borderRadius: 8,
+          border: '1px solid #d1d5db',
+          background: 'white',
+        }}
+      >
+        {/* center highlight band */}
+        <div
+          style={{
+            position: 'absolute',
+            top: OPTION_HEIGHT,         // middle row
+            left: '10%',
+            right: '10%',
+            height: OPTION_HEIGHT,
+            background: 'rgba(99,102,241,0.15)',
+            borderRadius: 12,
+            pointerEvents: 'none',
+            zIndex: 2
+          }}
+        />
 
         <div
           ref={containerRef}
           onScroll={handleScroll}
-		  className="picker-scroll"
           style={{
             height: '100%',
-            overflowY: 'scroll',
-            paddingTop: OPTION_HEIGHT,
-            paddingBottom: OPTION_HEIGHT,
+            overflowY: 'auto',
+            paddingTop: OPTION_HEIGHT,      // one row of padding above
+            paddingBottom: OPTION_HEIGHT,   // one row below
             scrollSnapType: 'y mandatory',
-            WebkitOverflowScrolling: 'touch',
-			scrollbarWidth: 'thin',
-			scrollbarColor: '#9ca3af #f3f4f6'
+            WebkitOverflowScrolling: 'touch'
           }}
         >
+
           {options.map((opt, idx) => {
             const isSelected = opt === Number(value);
             const isAbove = idx === selectedIndex - 1;
@@ -164,7 +175,6 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
                   scrollSnapAlign: 'center',
                   cursor: (isAbove || isBelow) ? 'pointer' : 'default'
                 }}
-
                 onClick={() => {
                   if (isAbove) tapSelect(selectedIndex - 1);
                   if (isBelow) tapSelect(selectedIndex + 1);
@@ -181,6 +191,7 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
 }
 
 // ---- end PickerWheel ----
+
 
 function MealPlanner() {
 
@@ -206,6 +217,40 @@ function MealPlanner() {
     document.head.appendChild(styleTag);
     return () => document.head.removeChild(styleTag);
   }, []);
+
+	// Mobile responsive layout
+	React.useEffect(() => {
+	  const styleTag = document.createElement("style");
+	  styleTag.textContent = `
+		/* portrait mobile */
+		@media (max-width: 768px) {
+		  .main-layout {
+			flex-direction: column !important;
+			height: auto !important;
+		  }
+		  .left-col, .right-col {
+			width: 100% !important;
+			min-width: 0 !important;
+		  }
+		}
+		/* landscape mobile */
+		@media (max-height: 500px) {
+		  .main-layout {
+			flex-direction: column !important;
+			height: auto !important;
+		  }
+
+		  .left-col,
+		  .right-col {
+			width: 100% !important;
+			min-width: 0 !important;
+		  }
+		}
+	  `;
+	  document.head.appendChild(styleTag);
+	  return () => document.head.removeChild(styleTag);
+	}, []);
+
 
   // Helper: convert to Start Case / Title Case
   const toStartCase = (str) => {
@@ -268,6 +313,11 @@ function MealPlanner() {
   const [recipes, setRecipes] = useState({});
   const [lunchRecipes, setLunchRecipes] = useState({});
   const [currentRecipeType, setCurrentRecipeType] = useState('dinner');
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyMode, setHistoryMode] = useState('dinner'); 
+  const [historySearch, setHistorySearch] = useState('');
+  const [returnToHistoryOnClose, setReturnToHistoryOnClose] = useState(false);
+
 
   const [newIdea, setNewIdea] = useState('');
   const [newLunchItem, setNewLunchItem] = useState('');
@@ -414,6 +464,10 @@ const saveRecipe = () => {
 // Close modal without saving
 const closeRecipeModal = () => {
   setShowRecipeModal(false);
+  if (returnToHistoryOnClose) {
+    setShowHistoryModal(true);     // reopen the history modal
+    setReturnToHistoryOnClose(false); // reset flag
+  }
   setCurrentRecipeMeal('');
   setCurrentRecipeType('dinner'); // NEW: Reset type
   setCurrentRecipe({
@@ -424,6 +478,39 @@ const closeRecipeModal = () => {
     instructions: ''
   });
 };
+
+// open meal history modal
+const openHistoryModal = (mode) => {
+  setHistoryMode(mode);
+  setHistorySearch('');
+  setShowHistoryModal(true);
+};
+
+const closeHistoryModal = () => {
+  setShowHistoryModal(false);
+};
+
+const getFilteredHistory = () => {
+  const search = historySearch.toLowerCase().trim();
+
+  const source = historyMode === 'dinner' ? mealHistory : lunchHistory;
+
+  // Search name + protein (using recipes or lunchRecipes)
+  return source.filter(item => {
+    const nameMatch = item.toLowerCase().includes(search);
+
+    let proteinMatch = false;
+    if (historyMode === 'dinner' && recipes[item]?.protein) {
+      proteinMatch = recipes[item].protein.toLowerCase().includes(search);
+    }
+    if (historyMode === 'lunch' && lunchRecipes[item]?.protein) {
+      proteinMatch = lunchRecipes[item].protein.toLowerCase().includes(search);
+    }
+
+    return nameMatch || proteinMatch;
+  });
+};
+
 
   // Load all DB data once (initial load)
   useEffect(() => {
@@ -1001,16 +1088,161 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
           </div>
         </div>
       )}
+	  
+	  {showHistoryModal && (
+  <div
+    onClick={closeHistoryModal}
+    style={{
+      position: "fixed",
+      top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.5)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 9999,
+      padding: "20px"
+    }}
+  >
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        background: "white",
+        borderRadius: "10px",
+        padding: "20px",
+        width: "100%",
+        maxWidth: "500px",
+        maxHeight: "80vh",
+        overflowY: "auto",
+        boxShadow: "0 10px 20px rgba(0,0,0,0.1)"
+      }}
+    >
+      <h2 style={{ marginTop: 0, marginBottom: "12px" }}>
+        {historyMode === "dinner" ? "Dinner Ideas History" : "Lunch Prep History"}
+      </h2>
+
+      <input
+        type="text"
+        placeholder="Search by name or protein..."
+        value={historySearch}
+        onChange={(e) => setHistorySearch(e.target.value)}
+        style={{
+          width: "100%",
+          padding: "8px 12px",
+          borderRadius: "6px",
+          border: "1px solid #d1d5db",
+          marginBottom: "12px"
+        }}
+      />
+
+{getFilteredHistory().map((item, idx) => (
+  <div
+    key={idx}
+    style={{
+      padding: "10px",
+      marginBottom: "6px",
+      background: "#f9fafb",
+      borderRadius: "6px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "8px"
+    }}
+  >
+    {/* GREEN PLUS BUTTON */}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+
+        if (historyMode === "dinner") {
+          setIdeas(prev => [...prev, item]);
+        } else {
+          setLunchPrep(prev => [...prev, item]);
+        }
+      }}
+      style={{
+        background: "#4ade80",
+        border: "none",
+        width: "28px",
+        height: "28px",
+        borderRadius: "6px",
+        color: "white",
+        fontSize: "18px",
+        cursor: "pointer"
+      }}
+    >
+      +
+    </button>
+
+    {/* CLICKING THE ROW OPENS THE RECIPE MODAL */}
+    <div
+      onClick={() => {
+		
+		setReturnToHistoryOnClose(true);
+		
+        if (historyMode === "dinner") {
+          openRecipeModal(item, "dinner");
+        } else {
+          openRecipeModal(item, "lunch");
+        }
+        closeHistoryModal();
+      }}
+      style={{ flex: 1, cursor: "pointer" }}
+    >
+      <strong>{item}</strong>
+
+      {(recipes[item] || lunchRecipes[item])?.protein && (
+        <div style={{ fontSize: "13px", color: "#6b7280" }}>
+          Protein: {(recipes[item] || lunchRecipes[item]).protein}
+        </div>
+      )}
+    </div>
+
+    {/* RED DELETE BUTTON */}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+
+        if (historyMode === "dinner") {
+          removeFromMealHistory(item);
+        } else {
+          removeFromLunchHistory(item);
+        }
+      }}
+      style={{
+        background: "#ef4444",
+        border: "none",
+        width: "28px",
+        height: "28px",
+        borderRadius: "6px",
+        color: "white",
+        fontSize: "18px",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }}
+    >
+      ✕
+    </button>
+  </div>
+))}
+
+
+    </div>
+  </div>
+)}
+
 
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
-        <div style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 13px)' }}>
+        <div className="main-layout" style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 13px)' }}>
 
           {/* LEFT COLUMN */}
-          <div style={{
+          <div className="left-col" style={{
             width: '50%', background: 'white', borderRadius: '8px',
             boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-            padding: '12px', display: 'flex', flexDirection: 'column'
+            display: 'flex', flexDirection: 'column'
           }}>
+		  <div style={{ padding: '12px', flex: 1, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
@@ -1073,7 +1305,14 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div
+			  style={{
+				flex: 1,
+				overflowY: 'auto',
+				boxSizing: 'border-box'
+			  }}
+			>
+
               {currentWeek.map((day, index) => (
                 <div
                   key={index}
@@ -1097,7 +1336,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
                     {day.day}
                   </label>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
   {/* Recipe button - moved to the left */}
   <button
     tabIndex="-1"
@@ -1133,6 +1372,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
     onKeyDown={(e) => handleEnterKey(e, index)}
     style={{
       flex: 1,
+	  minWidth: 0,
       padding: '6px 8px',
       border: '1px solid #fed7aa',
       borderRadius: '6px',
@@ -1167,8 +1407,9 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
 						))}
 						</div>
 						</div>
+						</div>
 {/* RIGHT COLUMN */}
-      <div style={{ width: '50%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div className="right-col" style={{ width: '50%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
         {/* IDEAS */}
         <div style={{
@@ -1176,13 +1417,37 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
           boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
           padding: '12px', display: 'flex', flexDirection: 'column'
         }}>
-          <h2 style={{
-            fontSize: '20px', fontWeight: 'bold',
-            borderBottom: '2px solid #4ade80', paddingBottom: '4px',
-            margin: '0 0 8px 0'
-          }}>
-            Ideas for Next Week ({ideas.length})
-          </h2>
+<div style={{ 
+  display: 'flex', 
+  justifyContent: 'space-between', 
+  alignItems: 'center',
+  borderBottom: '2px solid #4ade80',
+  paddingBottom: '4px',
+  marginBottom: '8px'
+}}>
+  <h2 style={{
+    fontSize: '20px', fontWeight: 'bold',
+    margin: 0
+  }}>
+    Ideas for Next Week ({ideas.length})
+  </h2>
+
+  <button
+    onClick={() => openHistoryModal("dinner")}
+    style={{
+      background: "#4ade80",
+      border: "none",
+      padding: "4px 8px",
+      borderRadius: "6px",
+      color: "white",
+      fontSize: "13px",
+      cursor: "pointer"
+    }}
+  >
+    View All
+  </button>
+</div>
+
 
 <div style={{ flex: 1, overflowY: 'auto', marginBottom: '8px' }}>
   {ideas.map((idea, index) => {
@@ -1374,13 +1639,37 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
           boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
           padding: '12px', display: 'flex', flexDirection: 'column'
         }}>
-          <h2 style={{
-            fontSize: '20px', fontWeight: 'bold',
-            borderBottom: '2px solid #60a5fa', paddingBottom: '4px',
-            margin: '0 0 8px 0'
-          }}>
-            Lunch Meal Prep ({lunchPrep.length})
-          </h2>
+<div style={{ 
+  display: 'flex', 
+  justifyContent: 'space-between', 
+  alignItems: 'center',
+  borderBottom: '2px solid #60a5fa',
+  paddingBottom: '4px',
+  marginBottom: '8px'
+}}>
+  <h2 style={{
+    fontSize: '20px', fontWeight: 'bold',
+    margin: 0
+  }}>
+    Lunch Meal Prep ({lunchPrep.length})
+  </h2>
+
+  <button
+    onClick={() => openHistoryModal("lunch")}
+    style={{
+      background: "#60a5fa",
+      border: "none",
+      padding: "4px 8px",
+      borderRadius: "6px",
+      color: "white",
+      fontSize: "13px",
+      cursor: "pointer"
+    }}
+  >
+    View All
+  </button>
+</div>
+
 
 		<div style={{ flex: 1, overflowY: 'auto', marginBottom: '8px' }}>
 		  {lunchPrep.map((item, index) => (
