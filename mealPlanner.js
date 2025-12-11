@@ -3,10 +3,10 @@ const { useState, useEffect, useRef } = React;
     - add ability to view & manage all/sort dinner & lunch ideas based on search/ingredients/proteins/carbs
     - fix layout on vertical phone orientation
 	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
-	- separate recipes for lunch/dinners
 	- add number of people fed with recipe
 	- make recipe popup scrollable to indicate more controls at top/bottom for small screens (mobile)
 	- fix scroll bar in cook/prep time selection
+	- fix highlight bar in time section - add empty unselectable bottom at bottom and if last available time is selected scroll it to middle
 */
 // Firebase Config
 const firebaseConfig = {
@@ -26,8 +26,25 @@ if (!firebase.apps.length) {
 }
 const database = firebase.database();
 
+const pickerStyles = `
+  .picker-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+  .picker-scroll::-webkit-scrollbar-track {
+    background: #f3f4f6;
+    border-radius: 4px;
+  }
+  .picker-scroll::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 4px;
+  }
+  .picker-scroll::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+  }
+`;
+
 // ---- PickerWheel component ----
-function PickerWheel({ value, onChange, min = 0, max = 240, step = 5, label = '' }) {
+function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = '' }) {
   const containerRef = React.useRef(null);
 
   const options = React.useMemo(() => {
@@ -114,13 +131,16 @@ function PickerWheel({ value, onChange, min = 0, max = 240, step = 5, label = ''
         <div
           ref={containerRef}
           onScroll={handleScroll}
+		  className="picker-scroll"
           style={{
             height: '100%',
             overflowY: 'scroll',
             paddingTop: OPTION_HEIGHT,
             paddingBottom: OPTION_HEIGHT,
             scrollSnapType: 'y mandatory',
-            WebkitOverflowScrolling: 'touch'
+            WebkitOverflowScrolling: 'touch',
+			scrollbarWidth: 'thin',
+			scrollbarColor: '#9ca3af #f3f4f6'
           }}
         >
           {options.map((opt, idx) => {
@@ -163,6 +183,30 @@ function PickerWheel({ value, onChange, min = 0, max = 240, step = 5, label = ''
 // ---- end PickerWheel ----
 
 function MealPlanner() {
+
+	  // Inject picker styles
+  React.useEffect(() => {
+    const styleTag = document.createElement('style');
+    styleTag.textContent = `
+      .picker-scroll::-webkit-scrollbar {
+        width: 8px;
+      }
+      .picker-scroll::-webkit-scrollbar-track {
+        background: #f3f4f6;
+        border-radius: 4px;
+      }
+      .picker-scroll::-webkit-scrollbar-thumb {
+        background: #9ca3af;
+        border-radius: 4px;
+      }
+      .picker-scroll::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+      }
+    `;
+    document.head.appendChild(styleTag);
+    return () => document.head.removeChild(styleTag);
+  }, []);
+
   // Helper: convert to Start Case / Title Case
   const toStartCase = (str) => {
     return str
@@ -222,6 +266,8 @@ function MealPlanner() {
   const [mealHistory, setMealHistory] = useState([]);
   const [lunchHistory, setLunchHistory] = useState([]);
   const [recipes, setRecipes] = useState({});
+  const [lunchRecipes, setLunchRecipes] = useState({});
+  const [currentRecipeType, setCurrentRecipeType] = useState('dinner');
 
   const [newIdea, setNewIdea] = useState('');
   const [newLunchItem, setNewLunchItem] = useState('');
@@ -262,7 +308,8 @@ function MealPlanner() {
     lunch: false,
     history: false,
     lunchHistory: false,
-    recipes: false // NEW
+    recipes: false,
+	lunchRecipes: false
   });
 
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -277,7 +324,7 @@ function MealPlanner() {
   };
 
   const allLoaded = dataLoaded.week && dataLoaded.ideas && dataLoaded.lunch && 
-                    dataLoaded.history && dataLoaded.lunchHistory && dataLoaded.recipes;
+                    dataLoaded.history && dataLoaded.lunchHistory && dataLoaded.recipes && dataLoaded.lunchRecipes;
 
   // Convert Firebase object into array (robust)
   const objectToArray = (obj) => {
@@ -320,51 +367,63 @@ function MealPlanner() {
     database.ref('mealPlanner/lunchHistory').set(updatedHistory);
   };
 
-  // Open recipe modal for a specific meal
-  const openRecipeModal = (mealName) => {
-    if (!mealName || !mealName.trim()) return;
-    
-    const normalizedName = toStartCase(mealName.trim());
-    setCurrentRecipeMeal(normalizedName);
-    
-    // Load existing recipe if it exists
-    const existingRecipe = recipes[normalizedName] || {
-	  cookTime: '',
-      prepTime: '',
-      protein: '',
-      ingredients: '',
-      instructions: ''
-    };
-    setCurrentRecipe(existingRecipe);
-    setShowRecipeModal(true);
+// Open recipe modal for a specific meal
+const openRecipeModal = (mealName, type = 'dinner') => {
+  if (!mealName || !mealName.trim()) return;
+  
+  const normalizedName = toStartCase(mealName.trim());
+  setCurrentRecipeMeal(normalizedName);
+  setCurrentRecipeType(type); // NEW: Track type
+  
+  // Load existing recipe based on type
+  const recipeSource = type === 'lunch' ? lunchRecipes : recipes;
+  const existingRecipe = recipeSource[normalizedName] || {
+    cookTime: '',
+    prepTime: '',
+    protein: '',
+    ingredients: '',
+    instructions: ''
   };
+  setCurrentRecipe(existingRecipe);
+  setShowRecipeModal(true);
+};
 
-  // Save recipe
-  const saveRecipe = () => {
-    if (!currentRecipeMeal) return;
-    
+// Save recipe
+const saveRecipe = () => {
+  if (!currentRecipeMeal) return;
+  
+  if (currentRecipeType === 'lunch') {
+    const updatedRecipes = {
+      ...lunchRecipes,
+      [currentRecipeMeal]: currentRecipe
+    };
+    setLunchRecipes(updatedRecipes);
+    database.ref('mealPlanner/lunchRecipes').set(updatedRecipes);
+  } else {
     const updatedRecipes = {
       ...recipes,
       [currentRecipeMeal]: currentRecipe
     };
-    
     setRecipes(updatedRecipes);
     database.ref('mealPlanner/recipes').set(updatedRecipes);
-    setShowRecipeModal(false);
-  };
+  }
+  
+  setShowRecipeModal(false);
+};
 
-  // Close modal without saving
-  const closeRecipeModal = () => {
-    setShowRecipeModal(false);
-    setCurrentRecipeMeal('');
-    setCurrentRecipe({
-	  cookTime: '',
-      prepTime: '',
-      protein: '',
-      ingredients: '',
-      instructions: ''
-    });
-  };
+// Close modal without saving
+const closeRecipeModal = () => {
+  setShowRecipeModal(false);
+  setCurrentRecipeMeal('');
+  setCurrentRecipeType('dinner'); // NEW: Reset type
+  setCurrentRecipe({
+    cookTime: '',
+    prepTime: '',
+    protein: '',
+    ingredients: '',
+    instructions: ''
+  });
+};
 
   // Load all DB data once (initial load)
   useEffect(() => {
@@ -373,7 +432,9 @@ function MealPlanner() {
     const lunchRef = database.ref('mealPlanner/lunchPrep');
     const historyRef = database.ref('mealPlanner/mealHistory');
     const lunchHistoryRef = database.ref('mealPlanner/lunchHistory');
-    const recipesRef = database.ref('mealPlanner/recipes'); // NEW
+    const recipesRef = database.ref('mealPlanner/recipes');
+	const lunchRecipesRef = database.ref('mealPlanner/lunchRecipes');
+
 
     weekRef.once('value', (snapshot) => {
       const data = objectToArray(snapshot.val());
@@ -411,7 +472,15 @@ function MealPlanner() {
       if (data) setRecipes(data);
       setDataLoaded((prev) => ({ ...prev, recipes: true }));
     });
+	
+ 	lunchRecipesRef.once('value', (snapshot) => {
+	  const data = snapshot.val();
+	  if (data) setLunchRecipes(data);
+	  setDataLoaded((prev) => ({ ...prev, lunchRecipes: true }));
+	});
   }, []);
+  
+
 
   // Detect clicks outside suggestions dropdown to close them
   useEffect(() => {
@@ -1327,14 +1396,14 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
 			  }}
 			>
 			  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flex: 1 }}>
-				{/* Recipe button */}
+				{/* Lunch Recipe button */}
 				<button
 				  onClick={(e) => {
 					e.stopPropagation();
-					openRecipeModal(item);
+					openRecipeModal(item, 'lunch');
 				  }}
 				  style={{
-					background: recipes[toStartCase(item)] ? '#10b981' : '#3b82f6',
+					background: lunchRecipes[toStartCase(item)] ? '#10b981' : '#3b82f6',
 					color: 'white',
 					border: 'none',
 					borderRadius: '4px',
@@ -1349,9 +1418,9 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
 					justifyContent: 'center',
 					flexShrink: 0
 				  }}
-				  title={recipes[toStartCase(item)] ? "Edit Recipe" : "Add Recipe"}
+				  title={lunchRecipes[toStartCase(item)] ? "Edit Recipe" : "Add Recipe"}
 				>
-				  {recipes[toStartCase(item)] ? '📒' : '📝'}
+				  {lunchRecipes[toStartCase(item)] ? '📒' : '📝'}
 				</button>
 
 				<span style={{ flex: 1, fontSize: '16px' }}>{item}</span>
