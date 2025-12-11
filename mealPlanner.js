@@ -3,6 +3,8 @@ const { useState, useEffect, useRef } = React;
 	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
 	- fix scroll bar in cook/prep time selection
 	- fix highlight bar in time section - add empty unselectable bottom at bottom and if last available time is selected scroll it to middle
+	- add the ability to manually add to meal history without assigning to day
+	- add a little checkmark animation and a toast popup saying {item} added to ideas for next week
 */
 // Firebase Config
 const firebaseConfig = {
@@ -316,6 +318,9 @@ function MealPlanner() {
   const [historyMode, setHistoryMode] = useState('dinner'); 
   const [historySearch, setHistorySearch] = useState('');
   const [returnToHistoryOnClose, setReturnToHistoryOnClose] = useState(false);
+  const [recentlyAdded, setRecentlyAdded] = useState(null);
+  const [toastMessage, setToastMessage] = useState("");
+
 
 
   const [newIdea, setNewIdea] = useState('');
@@ -416,6 +421,13 @@ function MealPlanner() {
     setLunchHistory(updatedHistory);
     database.ref('mealPlanner/lunchHistory').set(updatedHistory);
   };
+ 
+// toast message
+const showToast = (msg) => {
+  setToastMessage(msg);
+  setTimeout(() => setToastMessage(""), 1800);
+};
+
 
 // Open recipe modal for a specific meal
 const openRecipeModal = (mealName, type = 'dinner') => {
@@ -627,14 +639,24 @@ useEffect(() => {
 
   // ----------- Actions -----------
 
-  const updateMeal = (index, value) => {
+  const updateMeal = (index, value, options = {}) => {
+    const { logOldMeal = true } = options;
+
     const updated = [...currentWeek];
     const oldMeal = updated[index].meal;
     updated[index].meal = value;
     setCurrentWeek(updated);
 
-    if (oldMeal && oldMeal.trim() !== '' && value !== oldMeal) {
+    // Only log the old meal when explicitly allowed (drag/drop, long-press, clear, etc.)
+    if (logOldMeal && oldMeal && oldMeal.trim() !== '' && value !== oldMeal) {
       addToMealHistory(oldMeal);
+    }
+  };
+
+  const handleMealBlur = (index) => {
+    const value = currentWeek[index].meal;
+    if (value && value.trim() !== '') {
+      addToMealHistory(value);
     }
   };
 
@@ -1300,28 +1322,81 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
 {getFilteredHistory().map((item, idx) => (
   <div
     key={idx}
-    style={{
-      padding: "10px",
-      marginBottom: "6px",
-      background: "#f9fafb",
-      borderRadius: "6px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: "12px"
-    }}
+style={{
+		padding: "10px",
+		marginBottom: "8px",
+		background: "#f9fafb",
+		borderRadius: "8px",
+		border: "1px solid #d1d5db",            // stronger border
+		boxShadow: "0 2px 4px rgba(0,0,0,0.12)", // slightly stronger shadow
+		position: "relative",
+		overflow: "hidden",
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: "12px",
+		transition: "transform 0.08s ease, box-shadow 0.12s ease", // animation
+		cursor: "pointer"
+	  }}
+	  onTouchStart={(e) => {
+		e.currentTarget.style.transform = "scale(0.97)";
+		e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.15)";
+	  }}
+	  onTouchEnd={(e) => {
+		e.currentTarget.style.transform = "scale(1)";
+		e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.12)";
+	  }}
+	  onMouseDown={(e) => {
+		e.currentTarget.style.transform = "scale(0.97)";
+		e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.15)";
+	  }}
+	  onMouseUp={(e) => {
+		e.currentTarget.style.transform = "scale(1)";
+		e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.12)";
+	  }}
+	  onMouseLeave={(e) => {
+		e.currentTarget.style.transform = "scale(1)";
+		e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.12)";
+	  }}
   >
+  
+  {recentlyAdded === item && (
+  <div style={{
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    background: "rgba(74, 222, 128, 0.85)", // green translucent
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    fontSize: "32px",
+    color: "white",
+    animation: "quickFade 0.6s forwards",
+    pointerEvents: "none"
+  }}>
+    ✓
+  </div>
+)}
+
+  
     {/* GREEN PLUS BUTTON */}
     <button
-      onClick={(e) => {
-        e.stopPropagation();
+onClick={(e) => {
+  e.stopPropagation();
 
-        if (historyMode === "dinner") {
-          setIdeas(prev => [...prev, item]);
-        } else {
-          setLunchPrep(prev => [...prev, item]);
-        }
-      }}
+  // Add the item
+  if (historyMode === "dinner") {
+    setIdeas(prev => [...prev, item]);
+  } else {
+    setLunchPrep(prev => [...prev, item]);
+  }
+
+  // Trigger checkmark animation
+  setRecentlyAdded(item);
+  setTimeout(() => setRecentlyAdded(null), 600);
+
+  // Show toast
+  showToast(`${item} added to ${historyMode === "dinner" ? "ideas for next week" : "lunch meal prep"}`);
+}}
       style={{
         background: "#4ade80",
         border: "none",
@@ -1422,6 +1497,51 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
     </div>
   </div>
 )}
+
+{toastMessage && (
+  <div style={{
+    position: "fixed",
+    bottom: "20px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "#0D822C",
+    color: "white",
+    padding: "10px 18px",
+    borderRadius: "8px",
+    fontSize: "15px",
+    fontWeight: "700",
+    fontFamily: "Calibri, Arial, sans-serif", 
+    boxShadow: "0 4px 10px rgba(0,0,0,0.25)",
+    zIndex: 99999,
+    animation: "fadeInOut 1.5s"
+  }}>
+    {toastMessage}
+  </div>
+)}
+
+
+
+<style>
+{`
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  10% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  90% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+}
+
+@keyframes quickFade {
+  0% { opacity: 0; transform: scale(0.8); }
+  20% { opacity: 1; transform: scale(1); }
+  80% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.1); }
+}
+`}
+</style>
+
+
+
+
 
 
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
@@ -1559,11 +1679,13 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
     ref={el => inputRefs.current[index] = el}
     type="text"
     value={day.meal}
-    onChange={(e) => updateMeal(index, e.target.value)}
+    onChange={(e) => updateMeal(index, e.target.value, { logOldMeal: false })}
     onKeyDown={(e) => handleEnterKey(e, index)}
+    // When the user is done editing this day, log the final meal once
+    onBlur={() => handleMealBlur(index)}
     style={{
       flex: 1,
-	  minWidth: 0,
+      minWidth: 0,
       padding: '6px 8px',
       border: '1px solid #fed7aa',
       borderRadius: '6px',
@@ -1572,6 +1694,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
       boxSizing: 'border-box'
     }}
   />
+
   
   <button
     tabIndex="-1"
@@ -1612,7 +1735,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
   display: 'flex', 
   justifyContent: 'space-between', 
   alignItems: 'center',
-  borderBottom: '2px solid #4ade80',
+  borderBottom: '2px solid #7ad599',
   paddingBottom: '4px',
   marginBottom: '8px'
 }}>
@@ -1626,7 +1749,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
   <button
     onClick={() => openHistoryModal("dinner")}
     style={{
-      background: "#4ade80",
+      background: "#43b56d",
       border: "none",
       padding: "4px 8px",
       borderRadius: "6px",
@@ -1671,7 +1794,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
 
         style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          background: isSelected ? '#bbf7d0' : '#dcfce7', padding: '8px', borderRadius: '6px',
+          background: isSelected ? '#bbf7d0' : '#ccf1d8', padding: '8px', borderRadius: '6px',
           marginBottom: '6px', cursor: 'move',
           boxShadow: isSelected ? 'inset 0 0 0 2px #34d399' : 'none',
           userSelect: 'none',
@@ -1742,7 +1865,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
                 placeholder="Add new idea..."
                 style={{
                   flex: 1, padding: '8px 10px',
-                  border: '1px solid #bbf7d0', borderRadius: '6px',
+                  border: '1px solid #7ad599', borderRadius: '6px',
                   outline: 'none', fontSize: '14px', boxSizing: 'border-box'
                 }}
               />
@@ -1750,7 +1873,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
               <button
                 onClick={addIdea}
                 style={{
-                  background: '#22c55e', color: 'white',
+                  background: '#43b56d', color: 'white',
                   borderRadius: '6px', padding: '8px 14px',
                   cursor: 'pointer', fontSize: '20px', border: 'none',
                   lineHeight: 1
