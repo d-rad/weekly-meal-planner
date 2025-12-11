@@ -1,9 +1,6 @@
 const { useState, useEffect, useRef } = React;
 /* TODO:
-    - improve UI in meal history popup - fixed size based on display size, close button at bottom/x at top, shrink inline buttons, disallow horizontal scrolling outside of bounds, and stop going to text entry upon item removal
-		- for text entry default - may be linked to called methods removeFromLunchHistory/mealhistory. probably need to move this outside of function or base it on state of history modal being not open
 	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
-	- add number of people fed with recipe
 	- fix scroll bar in cook/prep time selection
 	- fix highlight bar in time section - add empty unselectable bottom at bottom and if last available time is selected scroll it to middle
 */
@@ -41,6 +38,8 @@ const pickerStyles = `
     background: #6b7280;
   }
 `;
+
+let suppressHistoryFocus = false;
 
 // ---- PickerWheel component ----
 function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = '' }) {
@@ -343,7 +342,8 @@ function MealPlanner() {
     prepTime: '',
     protein: '',
     ingredients: '',
-    instructions: ''
+    instructions: '',
+	servings: 0
   });
 
   const longPressTimer = useRef(null);
@@ -423,7 +423,7 @@ const openRecipeModal = (mealName, type = 'dinner') => {
   
   const normalizedName = toStartCase(mealName.trim());
   setCurrentRecipeMeal(normalizedName);
-  setCurrentRecipeType(type); // NEW: Track type
+  setCurrentRecipeType(type); // Track type
   
   // Load existing recipe based on type
   const recipeSource = type === 'lunch' ? lunchRecipes : recipes;
@@ -432,7 +432,8 @@ const openRecipeModal = (mealName, type = 'dinner') => {
     prepTime: '',
     protein: '',
     ingredients: '',
-    instructions: ''
+    instructions: '',
+	servings: 0
   };
   setCurrentRecipe(existingRecipe);
   setShowRecipeModal(true);
@@ -475,7 +476,8 @@ const closeRecipeModal = () => {
     prepTime: '',
     protein: '',
     ingredients: '',
-    instructions: ''
+    instructions: '',
+	servings: 0
   });
 };
 
@@ -510,6 +512,26 @@ const getFilteredHistory = () => {
     return nameMatch || proteinMatch;
   });
 };
+
+// force styling to avoid zooming
+useEffect(() => {
+  // Create a style element
+  const style = document.createElement("style");
+  style.innerHTML = `
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+  `;
+
+  // Append it to the document head
+  document.head.appendChild(style);
+
+  // Cleanup on unmount
+  return () => {
+    document.head.removeChild(style);
+  };
+}, []);
+
 
 
   // Load all DB data once (initial load)
@@ -703,7 +725,9 @@ const confirmRemoveMeal = window.confirm("Are you sure you want to remove " + me
   setMealHistory(updatedHistory);
   database.ref('mealPlanner/mealHistory').set(updatedHistory);
   setNewIdea('');
-  document.getElementById('ideafield').focus();
+  if (!suppressHistoryFocus) {
+   document.getElementById("ideafield").focus();
+  }
   
   // Update filtered suggestions
   const filtered = updatedHistory.filter(m => 
@@ -739,7 +763,9 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
   setLunchHistory(updatedHistory);
   database.ref('mealPlanner/lunchHistory').set(updatedHistory);
   setNewLunchItem('');
-  document.getElementById('lunchfield').focus();
+  if (!suppressHistoryFocus) {
+	document.getElementById('lunchfield').focus();
+  }
   
   // Update filtered suggestions
   const filtered = updatedHistory.filter(i => 
@@ -989,26 +1015,109 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
 			</div>
 
 
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
-                Protein
-              </label>
-              <input
-                type="text"
-                value={currentRecipe.protein}
-                onChange={(e) => setCurrentRecipe({ ...currentRecipe, protein: e.target.value })}
-                placeholder="e.g. Chicken, Beef, Tofu"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+            {/* Protein + Servings row */}
+<div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
 
+  {/* Protein (80%) */}
+  <div style={{ flex: 4 }}>
+    <label style={{ display: 'block', fontWeight: 600, marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
+      Protein
+    </label>
+    <input
+      type="text"
+      value={currentRecipe.protein}
+      onChange={(e) => setCurrentRecipe({ ...currentRecipe, protein: e.target.value })}
+      placeholder="e.g. Chicken"
+      style={{
+        width: '100%',
+        padding: '8px 12px',
+        border: '1px solid #d1d5db',
+        borderRadius: '6px',
+        fontSize: '16px',
+        boxSizing: 'border-box'
+      }}
+    />
+  </div>
+
+  {/* Servings (20%) */}
+  <div style={{ flex: 1 }}>
+    <label style={{ display: 'block', fontWeight: 600, marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
+      Servings
+    </label>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      {/* – button */}
+      <button
+        onClick={() =>
+          setCurrentRecipe(prev => ({
+            ...prev,
+            servings: Math.max(0, prev.servings - 1)   // 🔥 never below 0
+          }))
+        }
+        style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '4px',
+          border: '1px solid #d1d5db',
+          background: '#f3f4f6',
+          fontSize: '18px',
+          lineHeight: '18px',
+          textAlign: 'center',
+          padding: 0
+        }}
+      >
+        –
+      </button>
+
+      {/* numeric input */}
+      <input
+        type="number"
+        min="0"
+        value={currentRecipe.servings}
+        onChange={(e) => {
+          const value = Number(e.target.value);
+          if (!isNaN(value)) {
+            setCurrentRecipe(prev => ({
+              ...prev,
+              servings: Math.max(0, value)  // 🔥 enforce >= 0
+            }));
+          }
+        }}
+        style={{
+          width: '40px',
+          padding: '6px',
+          border: '1px solid #d1d5db',
+          borderRadius: '6px',
+          fontSize: '16px',
+          textAlign: 'center'
+        }}
+      />
+
+      {/* + button */}
+      <button
+        onClick={() =>
+          setCurrentRecipe(prev => ({
+            ...prev,
+            servings: prev.servings + 1
+          }))
+        }
+        style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '4px',
+          border: '1px solid #d1d5db',
+          background: '#f3f4f6',
+          fontSize: '18px',
+          lineHeight: '18px',
+          textAlign: 'center',
+          padding: 0
+        }}
+      >
+        +
+      </button>
+    </div>
+  </div>
+</div>
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', fontWeight: '600', marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
                 Ingredients
@@ -1106,34 +1215,88 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
     <div
       onClick={(e) => e.stopPropagation()}
       style={{
+		position: "relative",
         background: "white",
-        borderRadius: "10px",
+        borderRadius: "14px",
         padding: "20px",
         width: "100%",
         maxWidth: "500px",
-        maxHeight: "80vh",
-        overflowY: "auto",
+		height: "75vh",
+		display: "flex",
+		flexDirection: "column",
         boxShadow: "0 10px 20px rgba(0,0,0,0.1)"
       }}
     >
+	
+	      <button
+        onClick={closeHistoryModal}
+        style={{
+          position: "absolute",
+          top: "12px",
+          right: "12px",
+          background: "#e5e7eb",
+          border: "none",
+          borderRadius: "50%",
+          width: "32px",
+          height: "32px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          fontSize: "18px",
+          color: "#374151"
+        }}
+      >
+        ✕
+      </button>
+	
       <h2 style={{ marginTop: 0, marginBottom: "12px" }}>
         {historyMode === "dinner" ? "Dinner Ideas History" : "Lunch Prep History"}
       </h2>
 
-      <input
-        type="text"
-        placeholder="Search by name or protein..."
-        value={historySearch}
-        onChange={(e) => setHistorySearch(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "8px 12px",
-          borderRadius: "6px",
-          border: "1px solid #d1d5db",
-          marginBottom: "12px"
-        }}
-      />
+<div style={{ position: "relative", marginBottom: "12px" }}>
+  <input
+    type="text"
+    placeholder="Search by name or protein..."
+    value={historySearch}
+    onChange={(e) => setHistorySearch(e.target.value)}
+    style={{
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "8px 36px 8px 12px",
+      borderRadius: "6px",
+      border: "1px solid #d1d5db",
+    }}
+  />
 
+  {/* Clear button shown only if there is text */}
+  {historySearch.length > 0 && (
+    <button
+      onClick={() => setHistorySearch("")}
+      style={{
+        position: "absolute",
+        right: "8px",
+        top: "50%",
+        transform: "translateY(-50%)",
+        background: "transparent",
+        border: "none",
+        cursor: "pointer",
+        fontSize: "18px",
+        color: "#9ca3af",
+        padding: 0,
+        lineHeight: "1",
+      }}
+    >
+      ×
+    </button>
+  )}
+</div>
+
+<div style={{
+  flex: 1,
+  overflowY: "auto",
+  paddingRight: "6px"
+}}>
 {getFilteredHistory().map((item, idx) => (
   <div
     key={idx}
@@ -1145,7 +1308,7 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      gap: "8px"
+      gap: "12px"
     }}
   >
     {/* GREEN PLUS BUTTON */}
@@ -1162,12 +1325,17 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
       style={{
         background: "#4ade80",
         border: "none",
-        width: "28px",
-        height: "28px",
+        width: "18px",
+        height: "18px",
         borderRadius: "6px",
         color: "white",
-        fontSize: "18px",
-        cursor: "pointer"
+        fontSize: "20px",
+        cursor: "pointer",
+		display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+		padding: 0,
+		lineHeight: "1"
       }}
     >
       +
@@ -1201,32 +1369,55 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
     <button
       onClick={(e) => {
         e.stopPropagation();
-
+		
+		suppressHistoryFocus = true;
         if (historyMode === "dinner") {
           removeFromMealHistory(item);
         } else {
           removeFromLunchHistory(item);
         }
+		suppressHistoryFocus = false;
+		
       }}
       style={{
         background: "#ef4444",
         border: "none",
-        width: "28px",
-        height: "28px",
+        width: "18px",
+        height: "18px",
         borderRadius: "6px",
         color: "white",
-        fontSize: "18px",
+        fontSize: "15px",
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center"
+        justifyContent: "center",
+		padding: 0,
+		lineHeight: "1"
       }}
     >
-      ✕
+      X
     </button>
   </div>
-))}
 
+))}
+</div>
+
+	<button
+        onClick={closeHistoryModal}
+        style={{
+          marginTop: "12px",
+          width: "100%",
+          padding: "10px 0",
+          background: "#4b5563",
+          border: "none",
+          borderRadius: "8px",
+          color: "white",
+          fontSize: "16px",
+          cursor: "pointer"
+        }}
+      >
+        Close
+      </button>
 
     </div>
   </div>
