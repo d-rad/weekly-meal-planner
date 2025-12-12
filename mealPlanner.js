@@ -1321,6 +1321,42 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
   )}
 </div>
 
+{/* Add Idea button - shows when there's a search term */}
+{historySearch.trim().length > 0 && (
+  <button
+    onClick={() => {
+      const trimmedSearch = historySearch.trim();
+      const startCaseItem = toStartCase(trimmedSearch);
+      
+      if (historyMode === "dinner") {
+        setIdeas(prev => [...prev, startCaseItem]);
+        addToMealHistory(startCaseItem);
+        showToast(`${startCaseItem} added to ideas for next week`);
+      } else {
+        setLunchPrep(prev => [...prev, startCaseItem]);
+        addToLunchHistory(startCaseItem);
+        showToast(`${startCaseItem} added to lunch meal prep`);
+      }
+      
+      setHistorySearch("");
+    }}
+    style={{
+      width: "100%",
+      padding: "10px",
+      marginBottom: "12px",
+      background: historyMode === "dinner" ? "#43b56d" : "#3b82f6",
+      border: "none",
+      borderRadius: "8px",
+      color: "white",
+      fontSize: "15px",
+      fontWeight: "600",
+      cursor: "pointer"
+    }}
+  >
+    + Add "{historySearch.trim()}" to {historyMode === "dinner" ? "Ideas" : "Lunch Prep"}
+  </button>
+)}
+
 <div style={{
   flex: 1,
   overflowY: "auto",
