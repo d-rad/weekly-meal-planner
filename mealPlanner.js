@@ -1,10 +1,7 @@
 const { useState, useEffect, useRef } = React;
 /* TODO:
 	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
-	- fix scroll bar in cook/prep time selection
-	- fix highlight bar in time section - add empty unselectable bottom at bottom and if last available time is selected scroll it to middle
 	- add the ability to manually add to meal history without assigning to day
-	- add a little checkmark animation and a toast popup saying {item} added to ideas for next week
 */
 // Firebase Config
 const firebaseConfig = {
@@ -46,6 +43,7 @@ let suppressHistoryFocus = false;
 // ---- PickerWheel component ----
 function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = '' }) {
   const containerRef = React.useRef(null);
+  const contentRef = React.useRef(null);
 
   // Build [0, 5, 10, ..., 720]
   const options = React.useMemo(() => {
@@ -68,9 +66,10 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
     const idx = options.indexOf(Number(value));
     if (idx < 0) return;
 
+    // Calculate scroll position to center the selected option
     const targetTop = idx * OPTION_HEIGHT;
     el.scrollTo({ top: targetTop, behavior: 'auto' });
-  }, [value, options]);
+  }, [value, options, OPTION_HEIGHT]);
 
   const snapToIndex = (rawIdx) => {
     const el = containerRef.current;
@@ -119,7 +118,7 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
 
       <div
         style={{
-          height: WHEEL_HEIGHT,        // exactly 3 rows tall
+          height: WHEEL_HEIGHT,
           overflow: 'hidden',
           position: 'relative',
           borderRadius: 8,
@@ -131,7 +130,7 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
         <div
           style={{
             position: 'absolute',
-            top: OPTION_HEIGHT,         // middle row
+            top: OPTION_HEIGHT,
             left: '10%',
             right: '10%',
             height: OPTION_HEIGHT,
@@ -145,46 +144,52 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
         <div
           ref={containerRef}
           onScroll={handleScroll}
+          className="picker-scroll"
           style={{
             height: '100%',
-            overflowY: 'auto',
-            paddingTop: OPTION_HEIGHT,      // one row of padding above
-            paddingBottom: OPTION_HEIGHT,   // one row below
+            overflowY: 'scroll',
             scrollSnapType: 'y mandatory',
             WebkitOverflowScrolling: 'touch'
           }}
         >
+          <div
+            ref={contentRef}
+            style={{
+              paddingTop: OPTION_HEIGHT,
+              paddingBottom: OPTION_HEIGHT
+            }}
+          >
+            {options.map((opt, idx) => {
+              const isSelected = opt === Number(value);
+              const isAbove = idx === selectedIndex - 1;
+              const isBelow = idx === selectedIndex + 1;
 
-          {options.map((opt, idx) => {
-            const isSelected = opt === Number(value);
-            const isAbove = idx === selectedIndex - 1;
-            const isBelow = idx === selectedIndex + 1;
-
-            return (
-              <div
-                key={opt}
-                style={{
-                  height: OPTION_HEIGHT,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  userSelect: 'none',
-                  fontSize: isSelected ? 18 : 15,
-                  fontWeight: isSelected ? 700 : 400,
-                  color: isSelected ? '#111827' : '#6b7280',
-                  opacity: isSelected ? 1 : 0.75,
-                  scrollSnapAlign: 'center',
-                  cursor: (isAbove || isBelow) ? 'pointer' : 'default'
-                }}
-                onClick={() => {
-                  if (isAbove) tapSelect(selectedIndex - 1);
-                  if (isBelow) tapSelect(selectedIndex + 1);
-                }}
-              >
-                {opt} min
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={opt}
+                  style={{
+                    height: OPTION_HEIGHT,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    userSelect: 'none',
+                    fontSize: isSelected ? 18 : 15,
+                    fontWeight: isSelected ? 700 : 400,
+                    color: isSelected ? '#111827' : '#6b7280',
+                    opacity: isSelected ? 1 : 0.75,
+                    scrollSnapAlign: 'center',
+                    cursor: (isAbove || isBelow) ? 'pointer' : 'default'
+                  }}
+                  onClick={() => {
+                    if (isAbove) tapSelect(selectedIndex - 1);
+                    if (isBelow) tapSelect(selectedIndex + 1);
+                  }}
+                >
+                  {opt} min
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
