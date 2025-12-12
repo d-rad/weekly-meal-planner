@@ -1,7 +1,9 @@
 const { useState, useEffect, useRef } = React;
 /* TODO:
-	- opt (dont add ideas to database unless they are actually moved into dinners section (leave lunch alone)
-	- add the ability to manually add to meal history without assigning to day
+	- scroll bar hanging
+	- make ingredients a list section with quantities rather than free text input
+	- "add to groceries list" item next to each ingredient in recipe
+	- entering recipe from view all window and clicking "save recipe" return to view all rather than home window
 */
 // Firebase Config
 const firebaseConfig = {
