@@ -6,9 +6,8 @@
 
 const TABS = [
   { id: 'meals',   label: '🍽️  Meals',   title: 'Weekly Meal Planner' },
-  { id: 'weather', label: '🌤️  Weather', title: '7-Day Forecast' },
-  // Add more tabs here, e.g.:
-  // { id: 'groceries', label: '🛒 Groceries', title: 'Grocery List' },
+  { id: 'weather',   label: '🌤️  Weather',  title: '7-Day Forecast' },
+  { id: 'grocery',   label: '🛒  Groceries', title: 'Grocery List' },
 ];
 
 function App() {
@@ -104,6 +103,7 @@ function App() {
     switch (activeTab) {
       case 'meals':   return <MealPlanner />;
       case 'weather': return <WeatherTab />;
+      case 'grocery': return <GroceryTab />;
       // Add cases here as you add more tabs
       default:        return <MealPlanner />;
     }

@@ -1593,7 +1593,7 @@ onClick={(e) => {
 
 
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
-        <div className="main-layout" style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 13px)' }}>
+        <div className="main-layout" style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 65px)' }}>
 
           {/* LEFT COLUMN */}
           <div className="left-col" style={{
@@ -2192,4 +2192,3 @@ onClick={(e) => {
 </div>
 );
 }
-// Rendered by app.js
