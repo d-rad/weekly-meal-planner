@@ -220,7 +220,7 @@ function WeatherTab() {
               }}>
                 <span title="Chance of precipitation" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>🌂 {pop}%</span>
                 <span title="Precipitation amount" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>💧 {rain}"</span>
-                <span title="Max wind speed" style={{ fontSize: 12, color: textColor }}>💨 {wind} mph</span>
+                <span title="Max wind speed" style={{ fontSize: isToday ? 16 : 14, color: textColor }}>💨 {wind} mph</span>
               </div>
             </div>
           );
