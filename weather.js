@@ -158,10 +158,7 @@ function WeatherTab() {
     <div style={containerStyle}>
       {/* Header */}
       <div style={headerStyle}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: '#0c4a6e' }}>
-          7-Day Forecast
-        </h1>
-        <p style={{ margin: '6px 0 0', fontSize: 15, color: '#475569' }}>
+        <p style={{ margin: 0, fontSize: 32, fontWeight: 700, color: '#0c4a6e', letterSpacing: '-0.5px' }}>
           📍 {locationName}
         </p>
       </div>
@@ -208,7 +205,7 @@ function WeatherTab() {
                 <span style={{ fontSize: isToday ? 22 : 18, fontWeight: 700, color: isToday ? 'white' : '#f97316' }}>
                   {hi}°F
                 </span>
-                <span style={{ fontSize: isToday ? 16 : 14, color: textColor }}>
+                <span style={{ fontSize: isToday ? 16 : 14, fontWeight: 700, color: isToday ? 'rgba(255,255,255,0.85)' : '#1d4ed8' }}>
                   / {lo}°F
                 </span>
               </div>
@@ -217,15 +214,13 @@ function WeatherTab() {
               <div style={{
                 display: 'flex',
                 gap: 10,
-                fontSize: 12,
-                color: textColor,
                 marginTop: 4,
                 flexWrap: 'wrap',
                 justifyContent: 'center',
               }}>
-                <span title="Chance of precipitation">🌂 {pop}%</span>
-                <span title="Precipitation amount">💧 {rain}"</span>
-                <span title="Max wind speed">💨 {wind} mph</span>
+                <span title="Chance of precipitation" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>🌂 {pop}%</span>
+                <span title="Precipitation amount" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>💧 {rain}"</span>
+                <span title="Max wind speed" style={{ fontSize: 12, color: textColor }}>💨 {wind} mph</span>
               </div>
             </div>
           );
