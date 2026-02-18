@@ -33,7 +33,11 @@
   <!-- React root element -->
   <div id="root"></div>
 
-  <!-- Your React + JSX application -->
+  <!-- Tab components (order doesn't matter, but app.js must be last) -->
   <script type="text/babel" src="mealPlanner.js"></script>
+  <script type="text/babel" src="weather.js"></script>
+
+  <!-- App shell: navbar + tab routing. Must load AFTER all tab components. -->
+  <script type="text/babel" src="app.js"></script>
 </body>
 </html>

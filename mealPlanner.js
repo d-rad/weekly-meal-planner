@@ -2192,4 +2192,4 @@ onClick={(e) => {
 </div>
 );
 }
-ReactDOM.render(<MealPlanner />, document.getElementById('root'));
+// Rendered by app.js
