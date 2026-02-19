@@ -1,18 +1,20 @@
 // ── GroceryTab ───────────────────────────────────────────────────────────────
 // Grocery list backed by the same Firebase DB as the meal planner.
-// Stored under mealPlanner/groceryList, grouped by store when displayed.
+// Stored under mealPlanner/groceryList (active items) and
+// mealPlanner/groceryHistory (per-item defaults for autofill).
 
 const UNIT_SUGGESTIONS  = ['lbs', 'pkg', 'cups', 'gallons', 'oz'];
 const STORE_SUGGESTIONS = [
-  'Sam\'s Club', 'Costco', 'Kroger', 'HEB', 'Walmart',
+  "Sam's Club", 'Costco', 'Kroger', 'HEB', 'Walmart',
   'Grocery', 'Walgreens', 'Pharmacy', 'Amazon', 'Uncategorized'
 ];
 
 function GroceryTab() {
   const { useState, useEffect, useRef, useMemo } = React;
 
-  const [items, setItems]       = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [items, setItems]           = useState([]);
+  const [history, setHistory]       = useState({});  // { "Item Name": { unit, store } }
+  const [loading, setLoading]       = useState(true);
 
   // Form fields
   const [newItem, setNewItem]   = useState('');
@@ -20,13 +22,15 @@ function GroceryTab() {
   const [newUnit, setNewUnit]   = useState('');
   const [newStore, setNewStore] = useState('');
 
-  // Suggestion dropdown visibility
+  // Dropdown visibility
+  const [showItemSugg, setShowItemSugg]   = useState(false);
   const [showUnitSugg, setShowUnitSugg]   = useState(false);
   const [showStoreSugg, setShowStoreSugg] = useState(false);
 
-  // Validation errors
+  // Validation
   const [errors, setErrors] = useState({});
 
+  const itemRef  = useRef(null);
   const unitRef  = useRef(null);
   const storeRef = useRef(null);
   const db = firebase.database();
@@ -35,14 +39,11 @@ function GroceryTab() {
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
-      .g-input {
-        padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px;
-        font-size: 14px; outline: none; box-sizing: border-box;
-        font-family: sans-serif; width: 100%;
-      }
-      .g-input:focus  { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
-      .g-input.error  { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,0.15); }
-      .g-row:hover    { background: #f8fafc !important; }
+      .g-input { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px;
+        font-size: 14px; outline: none; box-sizing: border-box; font-family: sans-serif; width: 100%; }
+      .g-input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
+      .g-input.error { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,0.15); }
+      .g-row:hover   { background: #f8fafc !important; }
       .g-sugg-item:hover { background: #eef2ff !important; cursor: pointer; }
     `;
     document.head.appendChild(style);
@@ -52,6 +53,7 @@ function GroceryTab() {
   // ── Close dropdowns on outside click ───────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
+      if (itemRef.current  && !itemRef.current.contains(e.target))  setShowItemSugg(false);
       if (unitRef.current  && !unitRef.current.contains(e.target))  setShowUnitSugg(false);
       if (storeRef.current && !storeRef.current.contains(e.target)) setShowStoreSugg(false);
     };
@@ -59,7 +61,7 @@ function GroceryTab() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ── Firebase real-time listener ─────────────────────────────────────────────
+  // ── Firebase: active list (real-time) ──────────────────────────────────────
   useEffect(() => {
     const ref = db.ref('mealPlanner/groceryList');
     ref.on('value', (snap) => {
@@ -74,7 +76,28 @@ function GroceryTab() {
     return () => ref.off();
   }, []);
 
-  // ── Filtered suggestions ────────────────────────────────────────────────────
+  // ── Firebase: item history (load once) ─────────────────────────────────────
+  useEffect(() => {
+    db.ref('mealPlanner/groceryHistory').once('value', (snap) => {
+      setHistory(snap.val() || {});
+    });
+  }, []);
+
+  // ── Item autofill suggestions ───────────────────────────────────────────────
+  // Names currently unchecked on the active list — excluded from suggestions
+  const activeUncheckedNames = useMemo(() => {
+    return new Set(items.filter(i => !i.checked).map(i => i.name.toLowerCase()));
+  }, [items]);
+
+  const itemSuggestions = useMemo(() => {
+    const query = newItem.trim().toLowerCase();
+    return Object.keys(history)
+      .filter(name => !activeUncheckedNames.has(name.toLowerCase()))
+      .filter(name => !query || name.toLowerCase().includes(query))
+      .sort();
+  }, [history, activeUncheckedNames, newItem]);
+
+  // ── Unit / store filtered suggestions ──────────────────────────────────────
   const filteredUnits = newUnit.trim()
     ? UNIT_SUGGESTIONS.filter(u => u.toLowerCase().startsWith(newUnit.toLowerCase()))
     : UNIT_SUGGESTIONS;
@@ -83,27 +106,53 @@ function GroceryTab() {
     ? STORE_SUGGESTIONS.filter(s => s.toLowerCase().includes(newStore.toLowerCase()))
     : STORE_SUGGESTIONS;
 
-  // ── CRUD ────────────────────────────────────────────────────────────────────
-  const saveItems = (updated) => db.ref('mealPlanner/groceryList').set(updated);
+  // ── Select an item autofill suggestion ─────────────────────────────────────
+  const selectItemSuggestion = (name) => {
+    const defaults = history[name] || {};
+    setNewItem(name);
+    setNewQty('');                           // qty always blank
+    setNewUnit(defaults.unit  || '');        // pre-fill unit from last time
+    setNewStore(defaults.store || '');       // pre-fill store from last time
+    setShowItemSugg(false);
+  };
 
+  // ── Save helpers ────────────────────────────────────────────────────────────
+  const saveItems   = (updated) => db.ref('mealPlanner/groceryList').set(updated);
+  const saveHistory = (updated) => db.ref('mealPlanner/groceryHistory').set(updated);
+
+  // ── Add item ────────────────────────────────────────────────────────────────
   const addItem = () => {
     const errs = {};
-    if (!newItem.trim())  errs.item  = true;
-    if (!newStore.trim()) errs.store = true;
+    if (!newItem.trim()) errs.item = true;
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
 
+    const now   = new Date();
+    const mmdd  = `${now.getMonth() + 1}/${String(now.getDate()).padStart(2, '0')}`;
+    const store = newStore.trim() || 'Uncategorized';
+    const unit  = newUnit.trim();
+    const name  = newItem.trim();
+
     const item = {
       id:      Date.now().toString(),
-      name:    newItem.trim(),
+      name,
       qty:     newQty.trim(),
-      unit:    newUnit.trim(),
-      store:   newStore.trim() || 'Uncategorized',
+      unit,
+      store,
       checked: false,
+      addedDate: mmdd,
     };
-    const updated = [...items, item];
-    setItems(updated);
-    saveItems(updated);
+
+    // Update active list
+    const updatedItems = [...items, item];
+    setItems(updatedItems);
+    saveItems(updatedItems);
+
+    // Update history — store last-used unit + store for this item name
+    const updatedHistory = { ...history, [name]: { unit, store } };
+    setHistory(updatedHistory);
+    saveHistory(updatedHistory);
+
     setNewItem(''); setNewQty(''); setNewUnit(''); setNewStore('');
   };
 
@@ -142,11 +191,11 @@ function GroceryTab() {
 
   const checkedCount = items.filter(i => i.checked).length;
 
-  // ── Shared dropdown container style ────────────────────────────────────────
   const dropdownStyle = {
     position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 2,
     background: 'white', border: '1px solid #e2e8f0', borderRadius: 6,
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 200, overflow: 'hidden',
+    maxHeight: 180, overflowY: 'auto',
   };
 
   // ── Loading ─────────────────────────────────────────────────────────────────
@@ -172,18 +221,34 @@ function GroceryTab() {
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
 
-            {/* Item — required */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '2 1 160px' }}>
+            {/* Item — required, with history autofill */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '2 1 160px', position: 'relative' }} ref={itemRef}>
               <label style={{ fontSize: 11, fontWeight: 600, color: errors.item ? '#ef4444' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Item <span style={{ color: '#ef4444' }}>*</span>
               </label>
               <input
                 className={`g-input${errors.item ? ' error' : ''}`}
                 value={newItem}
-                onChange={e => { setNewItem(e.target.value); if (errors.item) setErrors(p => ({ ...p, item: false })); }}
+                onChange={e => { setNewItem(e.target.value); setShowItemSugg(true); if (errors.item) setErrors(p => ({ ...p, item: false })); }}
+                onFocus={() => setShowItemSugg(true)}
                 onKeyDown={e => e.key === 'Enter' && addItem()}
                 placeholder="e.g. Chicken breast"
               />
+              {showItemSugg && itemSuggestions.length > 0 && (
+                <div style={dropdownStyle}>
+                  {itemSuggestions.map(name => (
+                    <div key={name} className="g-sugg-item"
+                      style={{ padding: '7px 12px', fontSize: 14, color: '#1e293b', borderBottom: '1px solid #f1f5f9',
+                               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+                      onMouseDown={() => selectItemSuggestion(name)}>
+                      <span>{name}</span>
+                      <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                        {[history[name]?.unit, history[name]?.store].filter(Boolean).join(' · ')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Qty — optional, numeric only */}
@@ -199,7 +264,7 @@ function GroceryTab() {
               />
             </div>
 
-            {/* Unit — optional, with preset suggestions */}
+            {/* Unit — optional, preset suggestions */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 1 110px', position: 'relative' }} ref={unitRef}>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Unit</label>
               <input
@@ -223,18 +288,16 @@ function GroceryTab() {
               )}
             </div>
 
-            {/* Store — required, with preset suggestions */}
+            {/* Store — optional (defaults to Uncategorized), preset suggestions */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 140px', position: 'relative' }} ref={storeRef}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: errors.store ? '#ef4444' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Store <span style={{ color: '#ef4444' }}>*</span>
-              </label>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Store</label>
               <input
-                className={`g-input${errors.store ? ' error' : ''}`}
+                className="g-input"
                 value={newStore}
-                onChange={e => { setNewStore(e.target.value); setShowStoreSugg(true); if (errors.store) setErrors(p => ({ ...p, store: false })); }}
+                onChange={e => { setNewStore(e.target.value); setShowStoreSugg(true); }}
                 onFocus={() => setShowStoreSugg(true)}
                 onKeyDown={e => e.key === 'Enter' && addItem()}
-                placeholder="e.g. HEB"
+                placeholder="Uncategorized"
               />
               {showStoreSugg && filteredStores.length > 0 && (
                 <div style={dropdownStyle}>
@@ -257,11 +320,8 @@ function GroceryTab() {
             }}>+</button>
           </div>
 
-          {/* Validation message */}
-          {(errors.item || errors.store) && (
-            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#ef4444' }}>
-              {[errors.item && 'Item', errors.store && 'Store'].filter(Boolean).join(' and ')} {(errors.item && errors.store) ? 'are' : 'is'} required.
-            </p>
+          {errors.item && (
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#ef4444' }}>Item name is required.</p>
           )}
         </div>
       </div>
@@ -270,7 +330,6 @@ function GroceryTab() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
         <div style={{ maxWidth: 900, margin: '0 auto' }}>
 
-          {/* Clear checked */}
           {checkedCount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
               <button onClick={clearChecked} style={{
@@ -282,7 +341,6 @@ function GroceryTab() {
             </div>
           )}
 
-          {/* Empty state */}
           {grouped.length === 0 && (
             <div style={{ textAlign: 'center', color: '#94a3b8', marginTop: 60 }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🛍️</div>
@@ -290,7 +348,6 @@ function GroceryTab() {
             </div>
           )}
 
-          {/* Store groups */}
           {grouped.map(([store, storeItems]) => (
             <div key={store} style={{ marginBottom: 24 }}>
 
@@ -333,6 +390,13 @@ function GroceryTab() {
                       padding: '2px 10px', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
                     }}>
                       {[item.qty, item.unit].filter(Boolean).join(' ')}
+                    </span>
+                  )}
+
+                  {/* Date added */}
+                  {item.addedDate && (
+                    <span style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {item.addedDate}
                     </span>
                   )}
 
