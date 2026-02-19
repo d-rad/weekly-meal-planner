@@ -9,6 +9,25 @@ const STORE_SUGGESTIONS = [
   'Grocery', 'Walgreens', 'Pharmacy', 'Amazon', 'Uncategorized'
 ];
 
+// Derive icon path from store name: strip spaces + punctuation, lowercase
+const storeIconSrc = (store) =>
+  `res/${store.toLowerCase().replace(/[^a-z0-9]/g, '')}.png`;
+
+// Component that renders the store icon with emoji fallback
+function StoreIcon({ store, size = 20 }) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [store]); // reset if store changes
+  if (failed) return <span style={{ fontSize: size }}>🏪</span>;
+  return (
+    <img
+      src={storeIconSrc(store)}
+      alt=""
+      onError={() => setFailed(true)}
+      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }}
+    />
+  );
+}
+
 function GroceryTab() {
   const { useState, useEffect, useRef, useMemo } = React;
 
@@ -128,7 +147,8 @@ function GroceryTab() {
     setErrors({});
 
     const now   = new Date();
-    const mmdd  = `${now.getMonth() + 1}/${String(now.getDate()).padStart(2, '0')}`;
+    const MMM   = now.toLocaleDateString('en-US', { month: 'short' });
+    const mmdd  = `${MMM}-${String(now.getDate()).padStart(2, '0')}`;
     const store = newStore.trim() || 'Uncategorized';
     const unit  = newUnit.trim();
     const name  = newItem.trim();
@@ -356,7 +376,7 @@ function GroceryTab() {
                 display: 'flex', alignItems: 'center', gap: 8,
                 borderBottom: '2px solid #6366f1', paddingBottom: 6, marginBottom: 8,
               }}>
-                <span style={{ fontSize: 16 }}>🏪</span>
+                <StoreIcon store={store} size={20} />
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#312e81' }}>{store}</h3>
                 <span style={{ marginLeft: 'auto', fontSize: 12, color: '#94a3b8', fontWeight: 500 }}>
                   {storeItems.filter(i => !i.checked).length} / {storeItems.length} remaining
