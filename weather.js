@@ -2,32 +2,35 @@
 // Uses the browser's Geolocation API to get coordinates, then fetches a 7-day
 // forecast from Open-Meteo (free, no API key required).
 //
-// The last-fetch timestamp is stored at module scope so it survives the
-// component unmounting when the user switches tabs.
+// Module-level cache survives tab switches (component unmount/remount).
+// On remount within 15 min, cached data is loaded into state immediately
+// without making a new API call.
 
-const WEATHER_FIFTEEN_MIN = 15 * 60 * 1000;
-let weatherLastFetched = null;   // ms timestamp of last successful API call
-let weatherCachedCoords = null;  // { latitude, longitude }
+const WEATHER_FIFTEEN_MIN  = 15 * 60 * 1000;
+let weatherLastFetched     = null;   // ms timestamp of last successful fetch
+let weatherCachedCoords    = null;   // { latitude, longitude }
+let weatherCachedForecast  = null;   // data.daily object
+let weatherCachedLocation  = '';     // city name string
 
 function WeatherTab() {
-  const [forecast, setForecast] = React.useState(null);
-  const [locationName, setLocationName] = React.useState('');
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState(null);
+  const [forecast, setForecast]         = React.useState(weatherCachedForecast);
+  const [locationName, setLocationName] = React.useState(weatherCachedLocation);
+  const [loading, setLoading]           = React.useState(!weatherCachedForecast);
+  const [error, setError]               = React.useState(null);
 
   // WMO weather-code → human label + emoji
   const weatherCodeInfo = (code) => {
-    if (code === 0)                    return { label: 'Clear Sky',     emoji: '☀️' };
-    if (code === 1)                    return { label: 'Mainly Clear',  emoji: '🌤️' };
-    if (code === 2)                    return { label: 'Partly Cloudy', emoji: '⛅' };
-    if (code === 3)                    return { label: 'Overcast',      emoji: '☁️' };
-    if ([45,48].includes(code))        return { label: 'Foggy',         emoji: '🌫️' };
-    if ([51,53,55].includes(code))     return { label: 'Drizzle',       emoji: '🌦️' };
-    if ([61,63,65].includes(code))     return { label: 'Rain',          emoji: '🌧️' };
-    if ([71,73,75,77].includes(code))  return { label: 'Snow',          emoji: '❄️' };
-    if ([80,81,82].includes(code))     return { label: 'Rain Showers',  emoji: '🌧️' };
-    if ([85,86].includes(code))        return { label: 'Snow Showers',  emoji: '🌨️' };
-    if ([95,96,99].includes(code))     return { label: 'Thunderstorm',  emoji: '⛈️' };
+    if (code === 0)                   return { label: 'Clear Sky',     emoji: '☀️' };
+    if (code === 1)                   return { label: 'Mainly Clear',  emoji: '🌤️' };
+    if (code === 2)                   return { label: 'Partly Cloudy', emoji: '⛅' };
+    if (code === 3)                   return { label: 'Overcast',      emoji: '☁️' };
+    if ([45,48].includes(code))       return { label: 'Foggy',         emoji: '🌫️' };
+    if ([51,53,55].includes(code))    return { label: 'Drizzle',       emoji: '🌦️' };
+    if ([61,63,65].includes(code))    return { label: 'Rain',          emoji: '🌧️' };
+    if ([71,73,75,77].includes(code)) return { label: 'Snow',          emoji: '❄️' };
+    if ([80,81,82].includes(code))    return { label: 'Rain Showers',  emoji: '🌧️' };
+    if ([85,86].includes(code))       return { label: 'Snow Showers',  emoji: '🌨️' };
+    if ([95,96,99].includes(code))    return { label: 'Thunderstorm',  emoji: '⛈️' };
     return { label: 'Unknown', emoji: '🌡️' };
   };
 
@@ -40,9 +43,7 @@ function WeatherTab() {
 
   const reverseGeocode = async (lat, lon) => {
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
-      );
+      const res  = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
       const data = await res.json();
       const addr = data.address || {};
       return addr.city || addr.town || addr.village || addr.county || 'Your Location';
@@ -61,16 +62,20 @@ function WeatherTab() {
     return res.json();
   };
 
-  // Runs every time the tab is activated (component mounts).
-  // Skips the API call if we fetched within the last 15 minutes.
   React.useEffect(() => {
     const now = Date.now();
+
+    // Within cooldown AND we have cached data → restore it, nothing else to do
     if (weatherLastFetched && now - weatherLastFetched < WEATHER_FIFTEEN_MIN) {
-      // Data is fresh enough — nothing to do, just stop the loading spinner
-      setLoading(false);
+      if (weatherCachedForecast) {
+        setForecast(weatherCachedForecast);
+        setLocationName(weatherCachedLocation);
+        setLoading(false);
+      }
       return;
     }
 
+    // Need a fresh fetch
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser.');
       setLoading(false);
@@ -84,7 +89,6 @@ function WeatherTab() {
 
     (async () => {
       try {
-        // Reuse cached coords if we have them so we don't re-prompt
         let coords = weatherCachedCoords;
         if (!coords) {
           const pos = await getCoords();
@@ -97,9 +101,14 @@ function WeatherTab() {
           fetchWeather(latitude, longitude),
           reverseGeocode(latitude, longitude),
         ]);
+
+        // Update module-level cache
+        weatherCachedForecast = data.daily;
+        weatherCachedLocation = name;
+        weatherLastFetched    = Date.now();
+
         setForecast(data.daily);
         setLocationName(name);
-        weatherLastFetched = Date.now();
       } catch (e) {
         setError(
           e.code === 1
@@ -120,11 +129,6 @@ function WeatherTab() {
     boxSizing: 'border-box',
   };
 
-  const headerStyle = {
-    textAlign: 'center',
-    marginBottom: '28px',
-  };
-
   const gridStyle = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
@@ -142,7 +146,6 @@ function WeatherTab() {
     flexDirection: 'column',
     alignItems: 'center',
     gap: '8px',
-    transition: 'transform 0.15s',
   };
 
   const todayCard = {
@@ -184,7 +187,7 @@ function WeatherTab() {
   return (
     <div style={containerStyle}>
       {/* Header */}
-      <div style={headerStyle}>
+      <div style={{ textAlign: 'center', marginBottom: '28px' }}>
         <p style={{ margin: 0, fontSize: 32, fontWeight: 700, color: '#0c4a6e', letterSpacing: '-0.5px' }}>
           📍 {locationName}
         </p>
@@ -201,33 +204,20 @@ function WeatherTab() {
           const wind = Math.round(forecast.windspeed_10m_max[i]);
           const isToday = i === 0;
 
-          const card = isToday ? todayCard : cardBase;
-          const textColor = isToday ? 'rgba(255,255,255,0.85)' : '#64748b';
+          const card       = isToday ? todayCard : cardBase;
+          const textColor  = isToday ? 'rgba(255,255,255,0.85)' : '#64748b';
           const labelColor = isToday ? 'white' : '#1e293b';
 
           return (
             <div key={date} style={card}>
-              {/* Day name */}
               <div style={{ fontSize: isToday ? 18 : 15, fontWeight: 700, color: labelColor }}>
                 {dayLabel(date, i)}
               </div>
               {isToday && (
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: -6 }}>
-                  {date}
-                </div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: -6 }}>{date}</div>
               )}
-
-              {/* Weather icon */}
-              <div style={{ fontSize: isToday ? 56 : 44, lineHeight: 1, margin: '4px 0' }}>
-                {emoji}
-              </div>
-
-              {/* Condition label */}
-              <div style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: labelColor }}>
-                {label}
-              </div>
-
-              {/* Hi / Lo */}
+              <div style={{ fontSize: isToday ? 56 : 44, lineHeight: 1, margin: '4px 0' }}>{emoji}</div>
+              <div style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: labelColor }}>{label}</div>
               <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
                 <span style={{ fontSize: isToday ? 22 : 18, fontWeight: 700, color: isToday ? 'white' : '#f97316' }}>
                   {hi}°F
@@ -236,18 +226,10 @@ function WeatherTab() {
                   / {lo}°F
                 </span>
               </div>
-
-              {/* Stats row */}
-              <div style={{
-                display: 'flex',
-                gap: 10,
-                marginTop: 4,
-                flexWrap: 'wrap',
-                justifyContent: 'center',
-              }}>
+              <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
                 <span title="Chance of precipitation" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>🌂 {pop}%</span>
-                <span title="Precipitation amount" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>💧 {rain}"</span>
-                <span title="Max wind speed" style={{ fontSize: 12, color: textColor }}>💨 {wind} mph</span>
+                <span title="Precipitation amount"    style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>💧 {rain}"</span>
+                <span title="Max wind speed"          style={{ fontSize: 12, color: textColor }}>💨 {wind} mph</span>
               </div>
             </div>
           );
