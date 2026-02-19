@@ -28,6 +28,9 @@ const compareStores = (a, b) => {
   return ta !== tb ? ta - tb : a.localeCompare(b);
 };
 
+const toTitleCase = (str) =>
+  str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
 const storeIconSrc = (store) =>
   `res/${store.toLowerCase().replace(/[^a-z0-9]/g, '')}.png`;
 
@@ -134,7 +137,10 @@ function ManageHistoryModal({ history, onDelete, onClose }) {
       }} onClick={e => e.stopPropagation()}>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1e293b' }}>🗂 Manage Grocery History</h3>
+          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          Manage Grocery History
+        </h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>×</button>
         </div>
 
@@ -223,6 +229,9 @@ function GroceryTab() {
   // Modals
   const [editingItem, setEditingItem]         = useState(null); // item object being edited
   const [showHistoryMgr, setShowHistoryMgr]   = useState(false);
+
+  // Completed section collapsed by default
+  const [completedOpen, setCompletedOpen]     = useState(false);
 
   const [errors, setErrors] = useState({});
 
@@ -324,7 +333,7 @@ function GroceryTab() {
     const mmdd  = `${now.toLocaleDateString('en-US', { month: 'short' })}-${String(now.getDate()).padStart(2, '0')}`;
     const store = newStore.trim() || 'Uncategorized';
     const unit  = newUnit.trim();
-    const name  = newItem.trim();
+    const name  = toTitleCase(newItem.trim());
 
     // Pull saved productUrl / notes from history (if any)
     const prev = history[name] || {};
@@ -383,15 +392,18 @@ function GroceryTab() {
   };
 
   // ── Group by store ──────────────────────────────────────────────────────────
+  // Only unchecked items in store groups; checked items go to completed section
   const grouped = useMemo(() => {
     const map = {};
-    items.forEach(item => {
+    items.filter(i => !i.checked).forEach(item => {
       const s = item.store || 'Uncategorized';
       if (!map[s]) map[s] = [];
       map[s].push(item);
     });
     return Object.entries(map).sort(([a], [b]) => compareStores(a, b));
   }, [items]);
+
+  const completedItems = useMemo(() => items.filter(i => i.checked), [items]);
 
   const checkedCount = items.filter(i => i.checked).length;
 
@@ -442,8 +454,11 @@ function GroceryTab() {
             <button onClick={() => setShowHistoryMgr(true)} style={{
               background: '#fda4af', color: 'white', border: 'none',
               borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600,
-              cursor: 'pointer', whiteSpace: 'nowrap',
-            }}>🗂 Manage History</button>
+              cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5,
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              Manage History
+            </button>
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -484,7 +499,7 @@ function GroceryTab() {
               <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Qty</label>
               <input className="g-input" value={newQty} inputMode="decimal"
                 onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setNewQty(v); }}
-                onKeyDown={e => e.key === 'Enter' && addItem()} placeholder="2" />
+                onKeyDown={e => e.key === 'Enter' && addItem()} />
             </div>
 
             {/* Unit */}
@@ -545,24 +560,14 @@ function GroceryTab() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
         <div style={{ maxWidth: 900, margin: '0 auto' }}>
 
-          {checkedCount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-              <button onClick={clearChecked} style={{
-                background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca',
-                borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer', fontWeight: 600,
-              }}>
-                ✕ Remove {checkedCount} checked item{checkedCount !== 1 ? 's' : ''}
-              </button>
-            </div>
-          )}
-
-          {grouped.length === 0 && (
+          {grouped.length === 0 && completedItems.length === 0 && (
             <div style={{ textAlign: 'center', color: '#94a3b8', marginTop: 60 }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🛍️</div>
               <div style={{ fontSize: 16 }}>No items yet — add one above!</div>
             </div>
           )}
 
+          {/* ── Active items by store ── */}
           {grouped.map(([store, storeItems]) => {
             const meta    = getStoreMeta(store);
             const hasLink = !!meta.url;
@@ -657,6 +662,88 @@ function GroceryTab() {
               </div>
             );
           })}
+
+          {/* ── Completed items collapsible section ── */}
+          {completedItems.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {/* Section header / toggle */}
+              <button onClick={() => setCompletedOpen(o => !o)} style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                borderBottom: '2px solid #e2e8f0', paddingBottom: 6, marginBottom: completedOpen ? 8 : 0,
+              }}>
+                <span style={{ fontSize: 16, transition: 'transform 0.2s', display: 'inline-block',
+                  transform: completedOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#94a3b8' }}>
+                  Completed ({completedItems.length})
+                </h3>
+                {completedItems.length > 0 && (
+                  <button onClick={e => { e.stopPropagation(); clearChecked(); }} style={{
+                    marginLeft: 'auto', background: '#fef2f2', color: '#ef4444',
+                    border: '1px solid #fecaca', borderRadius: 6,
+                    padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600,
+                  }}>
+                    ✕ Clear all
+                  </button>
+                )}
+              </button>
+
+              {completedOpen && completedItems.map(item => (
+                <div key={item.id} className="g-row" style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 10px', borderRadius: 8, marginBottom: 4,
+                  background: '#f8fafc', border: '1px solid #f1f5f9', transition: 'background 0.1s',
+                }}>
+                  <input type="checkbox" checked={true} onChange={() => toggleChecked(item.id)}
+                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#6366f1', flexShrink: 0 }} />
+
+                  <span style={{
+                    flex: 1, fontSize: 15, color: '#94a3b8',
+                    textDecoration: 'line-through', fontWeight: 400,
+                    display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
+                  }}>
+                    {item.productUrl ? (
+                      <a href={item.productUrl.startsWith('http') ? item.productUrl : `https://${item.productUrl}`}
+                        target="_blank" rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'inherit' }}>
+                        {item.name} <span style={{ fontSize: 11, opacity: 0.5 }}>🔗</span>
+                      </a>
+                    ) : item.name}
+                    {item.notes && (
+                      <span title={item.notes} style={{ fontSize: 11, color: '#cbd5e1', flexShrink: 0, cursor: 'default' }}>📝</span>
+                    )}
+                  </span>
+
+                  <span style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {item.store}
+                  </span>
+
+                  {(item.qty || item.unit) && (
+                    <span style={{
+                      background: '#f1f5f9', color: '#94a3b8', borderRadius: 20,
+                      padding: '2px 10px', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+                    }}>
+                      {[item.qty, item.unit].filter(Boolean).join(' ')}
+                    </span>
+                  )}
+
+                  {item.addedDate && (
+                    <span style={{ fontSize: 11, color: '#e2e8f0', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {item.addedDate}
+                    </span>
+                  )}
+
+                  <button onClick={() => removeItem(item.id)} style={{
+                    background: 'none', border: 'none', color: '#e2e8f0',
+                    fontSize: 20, cursor: 'pointer', padding: '0 2px', lineHeight: 1, flexShrink: 0,
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                    onMouseLeave={e => e.currentTarget.style.color = '#e2e8f0'}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
