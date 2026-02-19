@@ -1,6 +1,13 @@
 // ── WeatherTab ──────────────────────────────────────────────────────────────
 // Uses the browser's Geolocation API to get coordinates, then fetches a 7-day
 // forecast from Open-Meteo (free, no API key required).
+//
+// The last-fetch timestamp is stored at module scope so it survives the
+// component unmounting when the user switches tabs.
+
+const WEATHER_FIFTEEN_MIN = 15 * 60 * 1000;
+let weatherLastFetched = null;   // ms timestamp of last successful API call
+let weatherCachedCoords = null;  // { latitude, longitude }
 
 function WeatherTab() {
   const [forecast, setForecast] = React.useState(null);
@@ -10,17 +17,17 @@ function WeatherTab() {
 
   // WMO weather-code → human label + emoji
   const weatherCodeInfo = (code) => {
-    if (code === 0)              return { label: 'Clear Sky',          emoji: '☀️' };
-    if (code === 1)              return { label: 'Mainly Clear',       emoji: '🌤️' };
-    if (code === 2)              return { label: 'Partly Cloudy',      emoji: '⛅' };
-    if (code === 3)              return { label: 'Overcast',           emoji: '☁️' };
-    if ([45,48].includes(code)) return { label: 'Foggy',              emoji: '🌫️' };
-    if ([51,53,55].includes(code)) return { label: 'Drizzle',         emoji: '🌦️' };
-    if ([61,63,65].includes(code)) return { label: 'Rain',            emoji: '🌧️' };
-    if ([71,73,75,77].includes(code)) return { label: 'Snow',         emoji: '❄️' };
-    if ([80,81,82].includes(code)) return { label: 'Rain Showers',    emoji: '🌧️' };
-    if ([85,86].includes(code)) return { label: 'Snow Showers',       emoji: '🌨️' };
-    if ([95,96,99].includes(code)) return { label: 'Thunderstorm',    emoji: '⛈️' };
+    if (code === 0)                    return { label: 'Clear Sky',     emoji: '☀️' };
+    if (code === 1)                    return { label: 'Mainly Clear',  emoji: '🌤️' };
+    if (code === 2)                    return { label: 'Partly Cloudy', emoji: '⛅' };
+    if (code === 3)                    return { label: 'Overcast',      emoji: '☁️' };
+    if ([45,48].includes(code))        return { label: 'Foggy',         emoji: '🌫️' };
+    if ([51,53,55].includes(code))     return { label: 'Drizzle',       emoji: '🌦️' };
+    if ([61,63,65].includes(code))     return { label: 'Rain',          emoji: '🌧️' };
+    if ([71,73,75,77].includes(code))  return { label: 'Snow',          emoji: '❄️' };
+    if ([80,81,82].includes(code))     return { label: 'Rain Showers',  emoji: '🌧️' };
+    if ([85,86].includes(code))        return { label: 'Snow Showers',  emoji: '🌨️' };
+    if ([95,96,99].includes(code))     return { label: 'Thunderstorm',  emoji: '⛈️' };
     return { label: 'Unknown', emoji: '🌡️' };
   };
 
@@ -49,43 +56,63 @@ function WeatherTab() {
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
       `&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,precipitation_probability_max` +
       `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7`;
-
     const res = await fetch(url);
     if (!res.ok) throw new Error('Weather fetch failed');
     return res.json();
   };
 
+  // Runs every time the tab is activated (component mounts).
+  // Skips the API call if we fetched within the last 15 minutes.
   React.useEffect(() => {
+    const now = Date.now();
+    if (weatherLastFetched && now - weatherLastFetched < WEATHER_FIFTEEN_MIN) {
+      // Data is fresh enough — nothing to do, just stop the loading spinner
+      setLoading(false);
+      return;
+    }
+
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser.');
       setLoading(false);
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          const [data, name] = await Promise.all([
-            fetchWeather(latitude, longitude),
-            reverseGeocode(latitude, longitude),
-          ]);
-          setForecast(data.daily);
-          setLocationName(name);
-        } catch (e) {
-          setError('Could not load weather data. Please try again.');
-        } finally {
-          setLoading(false);
+    const getCoords = () =>
+      new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject)
+      );
+
+    (async () => {
+      try {
+        // Reuse cached coords if we have them so we don't re-prompt
+        let coords = weatherCachedCoords;
+        if (!coords) {
+          const pos = await getCoords();
+          coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          weatherCachedCoords = coords;
         }
-      },
-      () => {
-        setError('Location access was denied. Please allow location access and refresh.');
+
+        const { latitude, longitude } = coords;
+        const [data, name] = await Promise.all([
+          fetchWeather(latitude, longitude),
+          reverseGeocode(latitude, longitude),
+        ]);
+        setForecast(data.daily);
+        setLocationName(name);
+        weatherLastFetched = Date.now();
+      } catch (e) {
+        setError(
+          e.code === 1
+            ? 'Location access was denied. Please allow location access and refresh.'
+            : 'Could not load weather data. Please try again.'
+        );
+      } finally {
         setLoading(false);
       }
-    );
+    })();
   }, []);
 
-  // ── Styles ─────────────────────────────────────────────────────────────────
+  // ── Styles ──────────────────────────────────────────────────────────────────
   const containerStyle = {
     minHeight: '100%',
     padding: '24px 16px',
@@ -125,7 +152,7 @@ function WeatherTab() {
     gridColumn: 'span 2',
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{ ...containerStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -220,7 +247,7 @@ function WeatherTab() {
               }}>
                 <span title="Chance of precipitation" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>🌂 {pop}%</span>
                 <span title="Precipitation amount" style={{ fontSize: isToday ? 16 : 14, fontWeight: 600, color: isToday ? 'rgba(255,255,255,0.9)' : '#0369a1' }}>💧 {rain}"</span>
-                <span title="Max wind speed" style={{ fontSize: isToday ? 16 : 14, color: textColor }}>💨 {wind} mph</span>
+                <span title="Max wind speed" style={{ fontSize: 12, color: textColor }}>💨 {wind} mph</span>
               </div>
             </div>
           );
@@ -228,7 +255,7 @@ function WeatherTab() {
       </div>
 
       <p style={{ textAlign: 'center', fontSize: 12, color: '#94a3b8', marginTop: 28 }}>
-        Data from <a href="https://open-meteo.com/" target="_blank" rel="noopener" style={{ color: '#0ea5e9' }}>Open-Meteo</a> · Updates on page load
+        Data from <a href="https://open-meteo.com/" target="_blank" rel="noopener" style={{ color: '#0ea5e9' }}>Open-Meteo</a> · Updates on tab activation (15-min cooldown)
       </p>
     </div>
   );
