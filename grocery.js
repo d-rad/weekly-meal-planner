@@ -1,13 +1,11 @@
 // ── GroceryTab ───────────────────────────────────────────────────────────────
 // Grocery list backed by the same Firebase DB as the meal planner.
-// Stored under mealPlanner/groceryList (active items) and
-// mealPlanner/groceryHistory (per-item defaults for autofill).
+// mealPlanner/groceryList    — active items
+// mealPlanner/groceryHistory — per-item defaults (unit, store, productUrl, notes)
 
 const UNIT_SUGGESTIONS = ['lbs', 'pkg', 'cups', 'gallons', 'oz'];
 
 // type: 1 = grocery store, 2 = non-grocery retailer, 3 = generic/uncategorized
-// Suggestion dropdown is sorted by type ASC then name ASC.
-// The grouped list on the page uses the same sort order.
 const STORE_DATA = [
   { name: "Sam's Club",    url: 'samsclub.com',    type: 1 },
   { name: 'Costco',        url: 'costco.com',      type: 1 },
@@ -21,38 +19,189 @@ const STORE_DATA = [
   { name: 'Uncategorized', url: '',                type: 3 },
 ];
 
-// Look up metadata for any store name (custom names not in STORE_DATA get type 2)
 const getStoreMeta = (name) =>
   STORE_DATA.find(s => s.name.toLowerCase() === name.toLowerCase()) ||
   { name, url: '', type: 2 };
 
-// Compare two store names for the shared sort order
 const compareStores = (a, b) => {
-  const ta = getStoreMeta(a).type;
-  const tb = getStoreMeta(b).type;
-  if (ta !== tb) return ta - tb;
-  return a.localeCompare(b);
+  const ta = getStoreMeta(a).type, tb = getStoreMeta(b).type;
+  return ta !== tb ? ta - tb : a.localeCompare(b);
 };
 
-// Derive icon path from store name: strip non-alphanumeric, lowercase
 const storeIconSrc = (store) =>
   `res/${store.toLowerCase().replace(/[^a-z0-9]/g, '')}.png`;
 
-// Icon with emoji fallback
 function StoreIcon({ store, size = 24 }) {
   const [failed, setFailed] = React.useState(false);
   React.useEffect(() => setFailed(false), [store]);
   if (failed) return <span style={{ fontSize: size }}>🏪</span>;
   return (
-    <img
-      src={storeIconSrc(store)}
-      alt=""
-      onError={() => setFailed(true)}
-      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }}
-    />
+    <img src={storeIconSrc(store)} alt="" onError={() => setFailed(true)}
+      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0 }} />
   );
 }
 
+// ── Edit Item Modal ───────────────────────────────────────────────────────────
+function EditItemModal({ item, onSave, onClose }) {
+  const [productUrl, setProductUrl] = React.useState(item.productUrl || '');
+  const [notes, setNotes]           = React.useState(item.notes || '');
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+    }} onClick={onClose}>
+      <div style={{
+        background: 'white', borderRadius: 12, padding: 24, width: '90%', maxWidth: 440,
+        boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+      }} onClick={e => e.stopPropagation()}>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1e293b' }}>
+            ✏️ Edit — <span style={{ color: '#6366f1' }}>{item.name}</span>
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 5 }}>
+              Product Link
+            </label>
+            <input
+              className="g-input"
+              value={productUrl}
+              onChange={e => setProductUrl(e.target.value)}
+              placeholder="https://example.com/product"
+            />
+            {productUrl && (
+              <a href={productUrl.startsWith('http') ? productUrl : `https://${productUrl}`}
+                target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 11, color: '#6366f1', display: 'inline-block', marginTop: 4 }}>
+                Open link ↗
+              </a>
+            )}
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 5 }}>
+              Notes
+            </label>
+            <textarea
+              className="g-input"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="e.g. Get the organic version, aisle 4…"
+              rows={3}
+              style={{ resize: 'vertical', lineHeight: 1.5 }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={onClose} style={{
+            background: '#f1f5f9', color: '#475569', border: 'none',
+            borderRadius: 7, padding: '8px 16px', fontSize: 14, cursor: 'pointer', fontWeight: 600,
+          }}>Cancel</button>
+          <button onClick={() => onSave({ productUrl: productUrl.trim(), notes: notes.trim() })} style={{
+            background: '#6366f1', color: 'white', border: 'none',
+            borderRadius: 7, padding: '8px 16px', fontSize: 14, cursor: 'pointer', fontWeight: 600,
+          }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Manage History Modal ──────────────────────────────────────────────────────
+function ManageHistoryModal({ history, onDelete, onClose }) {
+  const [search, setSearch] = React.useState('');
+  const [confirmKey, setConfirmKey] = React.useState(null);
+
+  const names = Object.keys(history)
+    .filter(n => !search.trim() || n.toLowerCase().includes(search.toLowerCase()))
+    .sort();
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+    }} onClick={onClose}>
+      <div style={{
+        background: 'white', borderRadius: 12, padding: 24, width: '90%', maxWidth: 500,
+        maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+      }} onClick={e => e.stopPropagation()}>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1e293b' }}>🗂 Manage Grocery History</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>×</button>
+        </div>
+
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b' }}>
+          Remove items that were accidentally saved so they no longer appear as suggestions.
+        </p>
+
+        <input className="g-input" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search history…" style={{ marginBottom: 12 }} />
+
+        <div style={{ flex: 1, overflowY: 'auto', borderRadius: 6, border: '1px solid #f1f5f9' }}>
+          {names.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+              {search ? 'No matches found.' : 'History is empty.'}
+            </div>
+          )}
+          {names.map(name => {
+            const meta = history[name];
+            const isConfirming = confirmKey === name;
+            return (
+              <div key={name} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 12px', borderBottom: '1px solid #f8fafc',
+                background: isConfirming ? '#fff1f2' : 'white',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{name}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
+                    {[meta?.unit, meta?.store].filter(Boolean).join(' · ')}
+                    {meta?.productUrl && ' · 🔗 has link'}
+                    {meta?.notes     && ' · 📝 has notes'}
+                  </div>
+                </div>
+                {isConfirming ? (
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => { onDelete(name); setConfirmKey(null); }} style={{
+                      background: '#ef4444', color: 'white', border: 'none',
+                      borderRadius: 5, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600,
+                    }}>Delete</button>
+                    <button onClick={() => setConfirmKey(null)} style={{
+                      background: '#f1f5f9', color: '#475569', border: 'none',
+                      borderRadius: 5, padding: '4px 10px', fontSize: 12, cursor: 'pointer',
+                    }}>Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmKey(name)} style={{
+                    background: 'none', border: '1px solid #fecaca', color: '#ef4444',
+                    borderRadius: 5, padding: '3px 9px', fontSize: 12, cursor: 'pointer',
+                  }}>Remove</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <button onClick={onClose} style={{
+            background: '#6366f1', color: 'white', border: 'none',
+            borderRadius: 7, padding: '8px 18px', fontSize: 14, cursor: 'pointer', fontWeight: 600,
+          }}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main GroceryTab ───────────────────────────────────────────────────────────
 function GroceryTab() {
   const { useState, useEffect, useRef, useMemo } = React;
 
@@ -71,6 +220,10 @@ function GroceryTab() {
   const [showUnitSugg, setShowUnitSugg]   = useState(false);
   const [showStoreSugg, setShowStoreSugg] = useState(false);
 
+  // Modals
+  const [editingItem, setEditingItem]         = useState(null); // item object being edited
+  const [showHistoryMgr, setShowHistoryMgr]   = useState(false);
+
   const [errors, setErrors] = useState({});
 
   const itemRef  = useRef(null);
@@ -88,8 +241,9 @@ function GroceryTab() {
       .g-input.error { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,0.15); }
       .g-row:hover   { background: #f8fafc !important; }
       .g-sugg-item:hover { background: #eef2ff !important; cursor: pointer; }
-      .store-header-link { text-decoration: none; display: flex; align-items: center; gap: 8px; }
       .store-header-link:hover h3 { text-decoration: underline; }
+      .g-edit-btn { opacity: 0.35; transition: opacity 0.15s; }
+      .g-row:hover .g-edit-btn { opacity: 1; }
     `;
     document.head.appendChild(style);
     return () => document.head.removeChild(style);
@@ -112,9 +266,7 @@ function GroceryTab() {
     ref.on('value', (snap) => {
       const val = snap.val();
       if (!val) { setItems([]); setLoading(false); return; }
-      const arr = Array.isArray(val)
-        ? val.filter(Boolean)
-        : Object.values(val).filter(Boolean);
+      const arr = Array.isArray(val) ? val.filter(Boolean) : Object.values(val).filter(Boolean);
       setItems(arr);
       setLoading(false);
     });
@@ -123,15 +275,12 @@ function GroceryTab() {
 
   // ── Firebase: item history ──────────────────────────────────────────────────
   useEffect(() => {
-    db.ref('mealPlanner/groceryHistory').once('value', (snap) => {
-      setHistory(snap.val() || {});
-    });
+    db.ref('mealPlanner/groceryHistory').once('value', (snap) => setHistory(snap.val() || {}));
   }, []);
 
-  // ── Item autofill suggestions ───────────────────────────────────────────────
+  // ── Suggestions ────────────────────────────────────────────────────────────
   const activeUncheckedNames = useMemo(() =>
-    new Set(items.filter(i => !i.checked).map(i => i.name.toLowerCase())),
-  [items]);
+    new Set(items.filter(i => !i.checked).map(i => i.name.toLowerCase())), [items]);
 
   const itemSuggestions = useMemo(() => {
     const q = newItem.trim().toLowerCase();
@@ -141,12 +290,10 @@ function GroceryTab() {
       .sort();
   }, [history, activeUncheckedNames, newItem]);
 
-  // ── Store / unit filtered suggestions ──────────────────────────────────────
   const filteredUnits = newUnit.trim()
     ? UNIT_SUGGESTIONS.filter(u => u.toLowerCase().startsWith(newUnit.toLowerCase()))
     : UNIT_SUGGESTIONS;
 
-  // Store suggestions: sorted by type then alpha, filtered by query
   const filteredStores = useMemo(() => {
     const q = newStore.trim().toLowerCase();
     return STORE_DATA
@@ -179,14 +326,21 @@ function GroceryTab() {
     const unit  = newUnit.trim();
     const name  = newItem.trim();
 
-    const item = { id: Date.now().toString(), name, qty: newQty.trim(), unit, store, checked: false, addedDate: mmdd };
+    // Pull saved productUrl / notes from history (if any)
+    const prev = history[name] || {};
+
+    const item = {
+      id: Date.now().toString(), name, qty: newQty.trim(), unit, store,
+      checked: false, addedDate: mmdd,
+      productUrl: prev.productUrl || '',
+      notes:      prev.notes      || '',
+    };
 
     const updatedItems   = [...items, item];
-    const updatedHistory = { ...history, [name]: { unit, store } };
+    const updatedHistory = { ...history, [name]: { unit, store, productUrl: item.productUrl, notes: item.notes } };
 
-    setItems(updatedItems);   saveItems(updatedItems);
+    setItems(updatedItems);     saveItems(updatedItems);
     setHistory(updatedHistory); saveHistory(updatedHistory);
-
     setNewItem(''); setNewQty(''); setNewUnit(''); setNewStore('');
   };
 
@@ -205,7 +359,30 @@ function GroceryTab() {
     setItems(u); saveItems(u);
   };
 
-  // ── Group by store, sorted by type then alpha ───────────────────────────────
+  // ── Save edits from modal ───────────────────────────────────────────────────
+  const saveItemEdit = ({ productUrl, notes }) => {
+    const updatedItems = items.map(i =>
+      i.id === editingItem.id ? { ...i, productUrl, notes } : i
+    );
+    // Also persist into history so it's recalled next add
+    const updatedHistory = {
+      ...history,
+      [editingItem.name]: { ...(history[editingItem.name] || {}), productUrl, notes },
+    };
+    setItems(updatedItems);     saveItems(updatedItems);
+    setHistory(updatedHistory); saveHistory(updatedHistory);
+    setEditingItem(null);
+  };
+
+  // ── Purge item from history ─────────────────────────────────────────────────
+  const deleteFromHistory = (name) => {
+    const updated = { ...history };
+    delete updated[name];
+    setHistory(updated);
+    saveHistory(updated);
+  };
+
+  // ── Group by store ──────────────────────────────────────────────────────────
   const grouped = useMemo(() => {
     const map = {};
     items.forEach(item => {
@@ -239,14 +416,39 @@ function GroceryTab() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#f8fafc', boxSizing: 'border-box' }}>
 
+      {/* ── Modals ─────────────────────────────────────────────────────────── */}
+      {editingItem && (
+        <EditItemModal
+          item={editingItem}
+          onSave={saveItemEdit}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
+      {showHistoryMgr && (
+        <ManageHistoryModal
+          history={history}
+          onDelete={deleteFromHistory}
+          onClose={() => setShowHistoryMgr(false)}
+        />
+      )}
+
       {/* ── Add Item Form ──────────────────────────────────────────────────── */}
       <div style={{ background: 'white', borderBottom: '1px solid #e2e8f0', padding: '14px 20px', flexShrink: 0 }}>
         <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <h2 style={{ margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#1e293b' }}>🛒 Grocery List</h2>
+
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#1e293b', flex: 1 }}>🛒 Grocery List</h2>
+            <button onClick={() => setShowHistoryMgr(true)} style={{
+              background: '#fda4af', color: 'white', border: 'none',
+              borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600,
+              cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>🗂 Manage History</button>
+          </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
 
-            {/* Item — required, history autofill */}
+            {/* Item */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '2 1 160px', position: 'relative' }} ref={itemRef}>
               <label style={{ fontSize: 11, fontWeight: 600, color: errors.item ? '#ef4444' : '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Item <span style={{ color: '#ef4444' }}>*</span>
@@ -263,7 +465,11 @@ function GroceryTab() {
                       style={{ padding: '7px 12px', fontSize: 14, color: '#1e293b', borderBottom: '1px solid #f1f5f9',
                                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
                       onMouseDown={() => selectItemSuggestion(name)}>
-                      <span>{name}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {name}
+                        {history[name]?.productUrl && <span title="Has product link" style={{ fontSize: 10 }}>🔗</span>}
+                        {history[name]?.notes      && <span title="Has notes"        style={{ fontSize: 10 }}>📝</span>}
+                      </span>
                       <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>
                         {[history[name]?.unit, history[name]?.store].filter(Boolean).join(' · ')}
                       </span>
@@ -273,7 +479,7 @@ function GroceryTab() {
               )}
             </div>
 
-            {/* Qty — numeric only */}
+            {/* Qty */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 1 75px' }}>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Qty</label>
               <input className="g-input" value={newQty} inputMode="decimal"
@@ -281,7 +487,7 @@ function GroceryTab() {
                 onKeyDown={e => e.key === 'Enter' && addItem()} placeholder="2" />
             </div>
 
-            {/* Unit — preset suggestions */}
+            {/* Unit */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 1 110px', position: 'relative' }} ref={unitRef}>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Unit</label>
               <input className="g-input" value={newUnit}
@@ -299,7 +505,7 @@ function GroceryTab() {
               )}
             </div>
 
-            {/* Store — optional, preset + type-sorted suggestions */}
+            {/* Store */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 140px', position: 'relative' }} ref={storeRef}>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Store</label>
               <input className="g-input" value={newStore}
@@ -360,7 +566,6 @@ function GroceryTab() {
           {grouped.map(([store, storeItems]) => {
             const meta    = getStoreMeta(store);
             const hasLink = !!meta.url;
-            // Icon + label — optionally wrapped in an <a> if we have a URL
             const StoreHeaderContent = () => (
               <>
                 <StoreIcon store={store} size={24} />
@@ -370,7 +575,6 @@ function GroceryTab() {
 
             return (
               <div key={store} style={{ marginBottom: 24 }}>
-                {/* Store header */}
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   borderBottom: '2px solid #6366f1', paddingBottom: 6, marginBottom: 8,
@@ -382,16 +586,13 @@ function GroceryTab() {
                       <StoreHeaderContent />
                     </a>
                   ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <StoreHeaderContent />
-                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><StoreHeaderContent /></div>
                   )}
                   <span style={{ marginLeft: 'auto', fontSize: 12, color: '#94a3b8', fontWeight: 500 }}>
                     {storeItems.filter(i => !i.checked).length} / {storeItems.length} remaining
                   </span>
                 </div>
 
-                {/* Items */}
                 {storeItems.map(item => (
                   <div key={item.id} className="g-row" style={{
                     display: 'flex', alignItems: 'center', gap: 10,
@@ -402,12 +603,26 @@ function GroceryTab() {
                     <input type="checkbox" checked={item.checked} onChange={() => toggleChecked(item.id)}
                       style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#6366f1', flexShrink: 0 }} />
 
+                    {/* Name + optional product link */}
                     <span style={{
                       flex: 1, fontSize: 15,
                       color: item.checked ? '#94a3b8' : '#1e293b',
                       textDecoration: item.checked ? 'line-through' : 'none',
                       fontWeight: item.checked ? 400 : 500,
-                    }}>{item.name}</span>
+                      display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
+                    }}>
+                      {item.productUrl ? (
+                        <a href={item.productUrl.startsWith('http') ? item.productUrl : `https://${item.productUrl}`}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{ color: 'inherit', textDecoration: 'none' }}
+                          title="Open product page">
+                          {item.name} <span style={{ fontSize: 11, opacity: 0.6 }}>🔗</span>
+                        </a>
+                      ) : item.name}
+                      {item.notes && (
+                        <span title={item.notes} style={{ fontSize: 11, color: '#a5b4fc', flexShrink: 0, cursor: 'default' }}>📝</span>
+                      )}
+                    </span>
 
                     {(item.qty || item.unit) && (
                       <span style={{
@@ -423,6 +638,12 @@ function GroceryTab() {
                         {item.addedDate}
                       </span>
                     )}
+
+                    {/* Edit button — fades in on row hover via CSS */}
+                    <button className="g-edit-btn" onClick={() => setEditingItem(item)} title="Edit item details" style={{
+                      background: 'none', border: 'none', color: '#6366f1',
+                      fontSize: 14, cursor: 'pointer', padding: '0 2px', lineHeight: 1, flexShrink: 0,
+                    }}>✏️</button>
 
                     <button onClick={() => removeItem(item.id)} style={{
                       background: 'none', border: 'none', color: '#cbd5e1',
