@@ -1,0 +1,10 @@
+enter to submit grocery idea
+dont save items as uncapitalized to db - need to check if it was just old page version
+split ingredients into modal items, allow click-to-add to grocery list
+side-by-side view when grocery shopping? or redundant when click to add functionality added
+tab order: item to store, having to tab across qty and unit every time is annoying
+cap item suggestion at 5
+if only one suggestion (item or store) tab to autofill
+how to allow multiple people to edit at once
+
+WAY FUTURE GOAL - Auto add to cart everything with a valid link - default qty to 1 if not specified. Check off everything ordered

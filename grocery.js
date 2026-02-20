@@ -226,6 +226,11 @@ function GroceryTab() {
   const [showUnitSugg, setShowUnitSugg]   = useState(false);
   const [showStoreSugg, setShowStoreSugg] = useState(false);
 
+  // Dropdown keyboard-navigation highlight indexes (-1 = none)
+  const [itemHlIdx,  setItemHlIdx]  = React.useState(-1);
+  const [storeHlIdx, setStoreHlIdx] = React.useState(-1);
+  const [unitHlIdx,  setUnitHlIdx]  = React.useState(-1);
+
   // Modals
   const [editingItem, setEditingItem]         = useState(null); // item object being edited
   const [showHistoryMgr, setShowHistoryMgr]   = useState(false);
@@ -309,6 +314,11 @@ function GroceryTab() {
       .filter(s => !q || s.name.toLowerCase().includes(q))
       .sort((a, b) => a.type !== b.type ? a.type - b.type : a.name.localeCompare(b.name));
   }, [newStore]);
+
+  // Reset highlight indexes when the suggestion lists change
+  React.useEffect(() => setItemHlIdx(-1),  [itemSuggestions]);
+  React.useEffect(() => setStoreHlIdx(-1), [filteredStores]);
+  React.useEffect(() => setUnitHlIdx(-1),  [filteredUnits]);
 
   // ── Autofill item selection ─────────────────────────────────────────────────
   const selectItemSuggestion = (name) => {
@@ -469,16 +479,32 @@ function GroceryTab() {
                 Item <span style={{ color: '#ef4444' }}>*</span>
               </label>
               <input className={`g-input${errors.item ? ' error' : ''}`} value={newItem}
-                onChange={e => { setNewItem(e.target.value); setShowItemSugg(true); if (errors.item) setErrors({}); }}
+                onChange={e => { setNewItem(e.target.value); setShowItemSugg(true); setItemHlIdx(-1); if (errors.item) setErrors({}); }}
                 onFocus={() => setShowItemSugg(true)}
-                onKeyDown={e => e.key === 'Enter' && addItem()}
+                onKeyDown={e => {
+                  const len = itemSuggestions.length;
+                  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && showItemSugg && len > 0) {
+                    e.preventDefault();
+                    setItemHlIdx(i => e.key === 'ArrowDown' ? Math.min(i + 1, len - 1) : Math.max(i - 1, 0));
+                  } else if (e.key === 'Tab' && showItemSugg && itemHlIdx >= 0) {
+                    e.preventDefault();
+                    selectItemSuggestion(itemSuggestions[itemHlIdx]);
+                  } else if (e.key === 'Escape') {
+                    setShowItemSugg(false); setItemHlIdx(-1);
+                  } else if (e.key === 'Enter') {
+                    if (showItemSugg && itemHlIdx >= 0) { selectItemSuggestion(itemSuggestions[itemHlIdx]); }
+                    else { addItem(); }
+                  }
+                }}
                 placeholder="e.g. Chicken breast" />
               {showItemSugg && itemSuggestions.length > 0 && (
                 <div style={dropdownStyle}>
-                  {itemSuggestions.map(name => (
+                  {itemSuggestions.map((name, idx) => (
                     <div key={name} className="g-sugg-item"
                       style={{ padding: '7px 12px', fontSize: 14, color: '#1e293b', borderBottom: '1px solid #f1f5f9',
-                               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+                               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                               background: idx === itemHlIdx ? '#e0e7ff' : undefined }}
+                      onMouseEnter={() => setItemHlIdx(idx)}
                       onMouseDown={() => selectItemSuggestion(name)}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         {name}
@@ -488,6 +514,46 @@ function GroceryTab() {
                       <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>
                         {[history[name]?.unit, history[name]?.store].filter(Boolean).join(' · ')}
                       </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Store — moved here, immediately after Item */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 140px', position: 'relative' }} ref={storeRef}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Store</label>
+              <input className="g-input" value={newStore}
+                onChange={e => { setNewStore(e.target.value); setShowStoreSugg(true); setStoreHlIdx(-1); }}
+                onFocus={() => setShowStoreSugg(true)}
+                onKeyDown={e => {
+                  const len = filteredStores.length;
+                  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && showStoreSugg && len > 0) {
+                    e.preventDefault();
+                    setStoreHlIdx(i => e.key === 'ArrowDown' ? Math.min(i + 1, len - 1) : Math.max(i - 1, 0));
+                  } else if (e.key === 'Tab' && showStoreSugg && storeHlIdx >= 0) {
+                    e.preventDefault();
+                    setNewStore(filteredStores[storeHlIdx].name); setShowStoreSugg(false); setStoreHlIdx(-1);
+                  } else if (e.key === 'Escape') {
+                    setShowStoreSugg(false); setStoreHlIdx(-1);
+                  } else if (e.key === 'Enter') {
+                    if (showStoreSugg && storeHlIdx >= 0) { setNewStore(filteredStores[storeHlIdx].name); setShowStoreSugg(false); setStoreHlIdx(-1); }
+                    else { addItem(); }
+                  }
+                }}
+                placeholder="Uncategorized" />
+              {showStoreSugg && filteredStores.length > 0 && (
+                <div style={dropdownStyle}>
+                  {filteredStores.map((s, idx) => (
+                    <div key={s.name} className="g-sugg-item"
+                      style={{ padding: '8px 12px', fontSize: 14, color: '#1e293b', borderBottom: '1px solid #f1f5f9',
+                               display: 'flex', alignItems: 'center', gap: 8,
+                               background: idx === storeHlIdx ? '#e0e7ff' : undefined }}
+                      onMouseEnter={() => setStoreHlIdx(idx)}
+                      onMouseDown={() => { setNewStore(s.name); setShowStoreSugg(false); setStoreHlIdx(-1); }}>
+                      <StoreIcon store={s.name} size={16} />
+                      <span style={{ flex: 1 }}>{s.name}</span>
+                      {s.url && <span style={{ fontSize: 11, color: '#94a3b8' }}>{s.url}</span>}
                     </div>
                   ))}
                 </div>
@@ -506,42 +572,38 @@ function GroceryTab() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 1 110px', position: 'relative' }} ref={unitRef}>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Unit</label>
               <input className="g-input" value={newUnit}
-                onChange={e => { setNewUnit(e.target.value); setShowUnitSugg(true); }}
+                onChange={e => { setNewUnit(e.target.value); setShowUnitSugg(true); setUnitHlIdx(-1); }}
                 onFocus={() => setShowUnitSugg(true)}
-                onKeyDown={e => e.key === 'Enter' && addItem()} placeholder="lbs, oz…" />
+                onKeyDown={e => {
+                  const len = filteredUnits.length;
+                  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && showUnitSugg && len > 0) {
+                    e.preventDefault();
+                    setUnitHlIdx(i => e.key === 'ArrowDown' ? Math.min(i + 1, len - 1) : Math.max(i - 1, 0));
+                  } else if (e.key === 'Tab' && showUnitSugg && unitHlIdx >= 0) {
+                    e.preventDefault();
+                    setNewUnit(filteredUnits[unitHlIdx]); setShowUnitSugg(false); setUnitHlIdx(-1);
+                  } else if (e.key === 'Escape') {
+                    setShowUnitSugg(false); setUnitHlIdx(-1);
+                  } else if (e.key === 'Enter') {
+                    if (showUnitSugg && unitHlIdx >= 0) { setNewUnit(filteredUnits[unitHlIdx]); setShowUnitSugg(false); setUnitHlIdx(-1); }
+                    else { addItem(); }
+                  }
+                }}
+                placeholder="lbs, oz…" />
               {showUnitSugg && filteredUnits.length > 0 && (
                 <div style={dropdownStyle}>
-                  {filteredUnits.map(u => (
+                  {filteredUnits.map((u, idx) => (
                     <div key={u} className="g-sugg-item"
-                      style={{ padding: '8px 12px', fontSize: 14, color: '#1e293b', borderBottom: '1px solid #f1f5f9' }}
-                      onMouseDown={() => { setNewUnit(u); setShowUnitSugg(false); }}>{u}</div>
+                      style={{ padding: '8px 12px', fontSize: 14, color: '#1e293b', borderBottom: '1px solid #f1f5f9',
+                               background: idx === unitHlIdx ? '#e0e7ff' : undefined }}
+                      onMouseEnter={() => setUnitHlIdx(idx)}
+                      onMouseDown={() => { setNewUnit(u); setShowUnitSugg(false); setUnitHlIdx(-1); }}>{u}</div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Store */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 140px', position: 'relative' }} ref={storeRef}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Store</label>
-              <input className="g-input" value={newStore}
-                onChange={e => { setNewStore(e.target.value); setShowStoreSugg(true); }}
-                onFocus={() => setShowStoreSugg(true)}
-                onKeyDown={e => e.key === 'Enter' && addItem()} placeholder="Uncategorized" />
-              {showStoreSugg && filteredStores.length > 0 && (
-                <div style={dropdownStyle}>
-                  {filteredStores.map(s => (
-                    <div key={s.name} className="g-sugg-item"
-                      style={{ padding: '8px 12px', fontSize: 14, color: '#1e293b', borderBottom: '1px solid #f1f5f9',
-                               display: 'flex', alignItems: 'center', gap: 8 }}
-                      onMouseDown={() => { setNewStore(s.name); setShowStoreSugg(false); }}>
-                      <StoreIcon store={s.name} size={16} />
-                      <span style={{ flex: 1 }}>{s.name}</span>
-                      {s.url && <span style={{ fontSize: 11, color: '#94a3b8' }}>{s.url}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+
 
             <button onClick={addItem} style={{
               background: '#6366f1', color: 'white', border: 'none', borderRadius: 6,
