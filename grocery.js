@@ -730,6 +730,15 @@ function GroceryTab() {
                       </span>
                     )}
 
+                    {item.sourceRecipe && (
+                      <span title={`Added from: ${item.sourceRecipe}`} style={{
+                        fontSize: 11, color: '#a5b4fc', whiteSpace: 'nowrap', flexShrink: 0,
+                        background: '#ede9fe', borderRadius: 4, padding: '1px 6px', fontStyle: 'italic',
+                      }}>
+                        {item.sourceRecipe}
+                      </span>
+                    )}
+
                     {/* Inline store editor chip */}
                     <div style={{ position: 'relative', flexShrink: 0 }} ref={isEditingStore ? storeEditRef : null}>
                       {isEditingStore ? (
@@ -776,15 +785,6 @@ function GroceryTab() {
                         </span>
                       )}
                     </div>
-
-                    {item.sourceRecipe && (
-                      <span title={`Added from: ${item.sourceRecipe}`} style={{
-                        fontSize: 11, color: '#a5b4fc', whiteSpace: 'nowrap', flexShrink: 0,
-                        background: '#ede9fe', borderRadius: 4, padding: '1px 6px', fontStyle: 'italic',
-                      }}>
-                        {item.sourceRecipe}
-                      </span>
-                    )}
 
                     {item.addedDate && (
                       <span style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap', flexShrink: 0 }}>
