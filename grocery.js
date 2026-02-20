@@ -31,6 +31,11 @@ const compareStores = (a, b) => {
 const toTitleCase = (str) =>
   str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
+// Firebase keys cannot contain . $ # [ ] /  — sanitize to underscores.
+// The original name is preserved as displayName inside the history value.
+const toHistoryKey = (name) => name.replace(/[.$#[\]/]/g, '_');
+const historyDisplayName = (key, val) => (val && val.displayName) ? val.displayName : key;
+
 const storeIconSrc = (store) =>
   `res/${store.toLowerCase().replace(/[^a-z0-9]/g, '')}.png`;
 
@@ -121,9 +126,11 @@ function ManageHistoryModal({ history, onDelete, onClose }) {
   const [search, setSearch] = React.useState('');
   const [confirmKey, setConfirmKey] = React.useState(null);
 
-  const names = Object.keys(history)
-    .filter(n => !search.trim() || n.toLowerCase().includes(search.toLowerCase()))
-    .sort();
+  // Build list of {key, displayName, meta} entries
+  const names = Object.entries(history)
+    .map(([k, v]) => ({ key: k, displayName: historyDisplayName(k, v), meta: v }))
+    .filter(e => !search.trim() || e.displayName.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   return (
     <div style={{
@@ -157,11 +164,11 @@ function ManageHistoryModal({ history, onDelete, onClose }) {
               {search ? 'No matches found.' : 'History is empty.'}
             </div>
           )}
-          {names.map(name => {
-            const meta = history[name];
-            const isConfirming = confirmKey === name;
+          {names.map(entry => {
+            const { key, displayName: name, meta } = entry;
+            const isConfirming = confirmKey === key;
             return (
-              <div key={name} style={{
+              <div key={key} style={{
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '9px 12px', borderBottom: '1px solid #f8fafc',
                 background: isConfirming ? '#fff1f2' : 'white',
@@ -186,7 +193,7 @@ function ManageHistoryModal({ history, onDelete, onClose }) {
                     }}>Cancel</button>
                   </div>
                 ) : (
-                  <button onClick={() => setConfirmKey(name)} style={{
+                  <button onClick={() => setConfirmKey(key)} style={{
                     background: 'none', border: '1px solid #fecaca', color: '#ef4444',
                     borderRadius: 5, padding: '3px 9px', fontSize: 12, cursor: 'pointer',
                   }}>Remove</button>
@@ -307,7 +314,8 @@ function GroceryTab() {
 
   const itemSuggestions = useMemo(() => {
     const q = newItem.trim().toLowerCase();
-    return Object.keys(history)
+    return Object.entries(history)
+      .map(([k, v]) => historyDisplayName(k, v))
       .filter(n => !activeUncheckedNames.has(n.toLowerCase()))
       .filter(n => !q || n.toLowerCase().includes(q))
       .sort();
@@ -331,7 +339,7 @@ function GroceryTab() {
 
   // ── Autofill item selection ─────────────────────────────────────────────────
   const selectItemSuggestion = (name) => {
-    const d = history[name] || {};
+    const d = history[toHistoryKey(name)] || {};
     setNewItem(name);
     setNewQty('');
     setNewUnit(d.unit  || '');
@@ -355,7 +363,7 @@ function GroceryTab() {
     const name  = toTitleCase(newItem.trim());
 
     // Pull saved productUrl / notes from history (if any)
-    const prev = history[name] || {};
+    const prev = history[toHistoryKey(name)] || {};
 
     const item = {
       id: Date.now().toString(), name, qty: newQty.trim(), unit, store,
@@ -365,7 +373,7 @@ function GroceryTab() {
     };
 
     const updatedItems   = [...items, item];
-    const updatedHistory = { ...history, [name]: { unit, store, productUrl: item.productUrl, notes: item.notes } };
+    const updatedHistory = { ...history, [toHistoryKey(name)]: { displayName: name, unit, store, productUrl: item.productUrl, notes: item.notes } };
 
     setItems(updatedItems);     saveItems(updatedItems);
     setHistory(updatedHistory); saveHistory(updatedHistory);
@@ -394,7 +402,7 @@ function GroceryTab() {
     // Also update history so future adds of this item default to the new store
     const item = items.find(i => i.id === id);
     if (item) {
-      const updatedHistory = { ...history, [item.name]: { ...(history[item.name] || {}), store: newStore } };
+      const updatedHistory = { ...history, [toHistoryKey(item.name)]: { ...(history[toHistoryKey(item.name)] || {}), displayName: item.name, store: newStore } };
       setHistory(updatedHistory);
       saveHistory(updatedHistory);
     }
@@ -410,7 +418,7 @@ function GroceryTab() {
     // Also persist into history so it's recalled next add
     const updatedHistory = {
       ...history,
-      [editingItem.name]: { ...(history[editingItem.name] || {}), productUrl, notes },
+      [toHistoryKey(editingItem.name)]: { ...(history[toHistoryKey(editingItem.name)] || {}), displayName: editingItem.name, productUrl, notes },
     };
     setItems(updatedItems);     saveItems(updatedItems);
     setHistory(updatedHistory); saveHistory(updatedHistory);
@@ -420,7 +428,7 @@ function GroceryTab() {
   // ── Purge item from history ─────────────────────────────────────────────────
   const deleteFromHistory = (name) => {
     const updated = { ...history };
-    delete updated[name];
+    delete updated[toHistoryKey(name)];
     setHistory(updated);
     saveHistory(updated);
   };
@@ -532,11 +540,11 @@ function GroceryTab() {
                       onMouseDown={() => selectItemSuggestion(name)}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         {name}
-                        {history[name]?.productUrl && <span title="Has product link" style={{ fontSize: 10 }}>🔗</span>}
-                        {history[name]?.notes      && <span title="Has notes"        style={{ fontSize: 10 }}>📝</span>}
+                        {history[toHistoryKey(name)]?.productUrl && <span title="Has product link" style={{ fontSize: 10 }}>🔗</span>}
+                        {history[toHistoryKey(name)]?.notes      && <span title="Has notes"        style={{ fontSize: 10 }}>📝</span>}
                       </span>
                       <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                        {[history[name]?.unit, history[name]?.store].filter(Boolean).join(' · ')}
+                        {[history[toHistoryKey(name)]?.unit, history[toHistoryKey(name)]?.store].filter(Boolean).join(' · ')}
                       </span>
                     </div>
                   ))}

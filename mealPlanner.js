@@ -588,6 +588,9 @@ const showToast = (msg) => {
 };
 
 
+// Firebase key sanitizer — forbidden chars: . $ # [ ] /
+const toHistoryKey = (name) => name.replace(/[.$#[\]/]/g, '_');
+
 // Helper: parse legacy string ingredients OR ensure array format
 const parseIngredients = (raw) => {
   if (!raw) return [{ qty: '', unit: '', item: '' }];
@@ -604,7 +607,7 @@ const addIngredientToGrocery = (row) => {
   const name = toStartCase(row.item.trim());
   const now = new Date();
   const mmdd = `${now.toLocaleDateString('en-US', { month: 'short' })}-${String(now.getDate()).padStart(2, '0')}`;
-  const prev = groceryHistory[name] || {};
+  const prev = groceryHistory[toHistoryKey(name)] || {};
 
   database.ref('mealPlanner/groceryList').once('value', snap => {
     const val = snap.val();
@@ -630,7 +633,8 @@ const addIngredientToGrocery = (row) => {
     // Update history — preserve existing unit/store if we have them, otherwise use recipe row values
     const updatedHistory = {
       ...groceryHistory,
-      [name]: {
+      [toHistoryKey(name)]: {
+        displayName: name,
         unit: prev.unit || row.unit || '',
         store: prev.store || 'Uncategorized',
         productUrl: prev.productUrl || '',
@@ -692,9 +696,10 @@ const saveRecipe = () => {
   rows.forEach(row => {
     if (!row.item || !row.item.trim()) return;
     const name = toStartCase(row.item.trim());
-    if (!updatedGroceryHistory[name]) {
+    if (!updatedGroceryHistory[toHistoryKey(name)]) {
       // Brand new ingredient — seed a default history entry
-      updatedGroceryHistory[name] = {
+      updatedGroceryHistory[toHistoryKey(name)] = {
+        displayName: name,
         unit: row.unit || '',
         store: 'Uncategorized',
         productUrl: '',
