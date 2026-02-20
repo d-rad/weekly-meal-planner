@@ -235,6 +235,11 @@ function GroceryTab() {
   const [editingItem, setEditingItem]         = useState(null); // item object being edited
   const [showHistoryMgr, setShowHistoryMgr]   = useState(false);
 
+  // Inline store editor — which item's store dropdown is open
+  const [editingStoreId, setEditingStoreId]   = useState(null);
+  const [storeEditQuery, setStoreEditQuery]   = useState('');
+  const storeEditRef = useRef(null);
+
   // Completed section collapsed by default
   const [completedOpen, setCompletedOpen]     = useState(false);
 
@@ -269,6 +274,10 @@ function GroceryTab() {
       if (itemRef.current  && !itemRef.current.contains(e.target))  setShowItemSugg(false);
       if (unitRef.current  && !unitRef.current.contains(e.target))  setShowUnitSugg(false);
       if (storeRef.current && !storeRef.current.contains(e.target)) setShowStoreSugg(false);
+      if (storeEditRef.current && !storeEditRef.current.contains(e.target)) {
+        setEditingStoreId(null);
+        setStoreEditQuery('');
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -376,6 +385,21 @@ function GroceryTab() {
   const clearChecked = () => {
     const u = items.filter(i => !i.checked);
     setItems(u); saveItems(u);
+  };
+
+  // ── Update store on an active item inline ───────────────────────────────────
+  const updateItemStore = (id, newStore) => {
+    const u = items.map(i => i.id === id ? { ...i, store: newStore } : i);
+    setItems(u); saveItems(u);
+    // Also update history so future adds of this item default to the new store
+    const item = items.find(i => i.id === id);
+    if (item) {
+      const updatedHistory = { ...history, [item.name]: { ...(history[item.name] || {}), store: newStore } };
+      setHistory(updatedHistory);
+      saveHistory(updatedHistory);
+    }
+    setEditingStoreId(null);
+    setStoreEditQuery('');
   };
 
   // ── Save edits from modal ───────────────────────────────────────────────────
@@ -660,7 +684,13 @@ function GroceryTab() {
                   </span>
                 </div>
 
-                {storeItems.map(item => (
+                {storeItems.map(item => {
+                  const isEditingStore = editingStoreId === item.id;
+                  const storeEditSuggs = STORE_DATA
+                    .filter(s => !storeEditQuery || s.name.toLowerCase().includes(storeEditQuery.toLowerCase()))
+                    .sort((a, b) => a.type !== b.type ? a.type - b.type : a.name.localeCompare(b.name));
+
+                  return (
                   <div key={item.id} className="g-row" style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '8px 10px', borderRadius: 8, marginBottom: 4,
@@ -700,6 +730,53 @@ function GroceryTab() {
                       </span>
                     )}
 
+                    {/* Inline store editor chip */}
+                    <div style={{ position: 'relative', flexShrink: 0 }} ref={isEditingStore ? storeEditRef : null}>
+                      {isEditingStore ? (
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <input
+                            autoFocus
+                            className="g-input"
+                            value={storeEditQuery}
+                            onChange={e => setStoreEditQuery(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Escape') { setEditingStoreId(null); setStoreEditQuery(''); } if (e.key === 'Enter' && storeEditQuery.trim()) updateItemStore(item.id, storeEditQuery.trim()); }}
+                            placeholder="Store…"
+                            style={{ width: 110, padding: '3px 7px', fontSize: 12, height: 26 }}
+                          />
+                          {storeEditSuggs.length > 0 && (
+                            <div style={{
+                              position: 'absolute', top: '100%', left: 0, width: 160, marginTop: 2,
+                              background: 'white', border: '1px solid #e2e8f0', borderRadius: 6,
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 300, maxHeight: 180, overflowY: 'auto',
+                            }}>
+                              {storeEditSuggs.map(s => (
+                                <div key={s.name}
+                                  style={{ padding: '6px 10px', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, borderBottom: '1px solid #f1f5f9' }}
+                                  onMouseDown={() => updateItemStore(item.id, s.name)}
+                                  className="g-sugg-item">
+                                  <StoreIcon store={s.name} size={14} />
+                                  {s.name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          title="Click to change store"
+                          onClick={() => { setEditingStoreId(item.id); setStoreEditQuery(''); }}
+                          className="g-edit-btn"
+                          style={{
+                            fontSize: 11, color: '#94a3b8', background: '#f1f5f9',
+                            borderRadius: 4, padding: '2px 7px', cursor: 'pointer',
+                            whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4,
+                          }}>
+                          <StoreIcon store={item.store || 'Uncategorized'} size={12} />
+                          {item.store || 'Uncategorized'}
+                        </span>
+                      )}
+                    </div>
+
                     {item.sourceRecipe && (
                       <span title={`Added from: ${item.sourceRecipe}`} style={{
                         fontSize: 11, color: '#a5b4fc', whiteSpace: 'nowrap', flexShrink: 0,
@@ -729,7 +806,8 @@ function GroceryTab() {
                       onMouseLeave={e => e.currentTarget.style.color = '#cbd5e1'}
                     >×</button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })}

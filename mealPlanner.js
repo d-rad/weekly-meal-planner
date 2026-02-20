@@ -684,6 +684,29 @@ const saveRecipe = () => {
     setRecipes(updatedRecipes);
     database.ref('mealPlanner/recipes').set(updatedRecipes);
   }
+
+  // Auto-create groceryHistory entries for any ingredients not yet known
+  const rows = Array.isArray(currentRecipe.ingredients) ? currentRecipe.ingredients : [];
+  let historyChanged = false;
+  const updatedGroceryHistory = { ...groceryHistory };
+  rows.forEach(row => {
+    if (!row.item || !row.item.trim()) return;
+    const name = toStartCase(row.item.trim());
+    if (!updatedGroceryHistory[name]) {
+      // Brand new ingredient — seed a default history entry
+      updatedGroceryHistory[name] = {
+        unit: row.unit || '',
+        store: 'Uncategorized',
+        productUrl: '',
+        notes: '',
+      };
+      historyChanged = true;
+    }
+  });
+  if (historyChanged) {
+    setGroceryHistory(updatedGroceryHistory);
+    database.ref('mealPlanner/groceryHistory').set(updatedGroceryHistory);
+  }
   
   setShowRecipeModal(false);
   
