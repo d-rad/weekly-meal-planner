@@ -700,6 +700,15 @@ function GroceryTab() {
                       </span>
                     )}
 
+                    {item.sourceRecipe && (
+                      <span title={`Added from: ${item.sourceRecipe}`} style={{
+                        fontSize: 11, color: '#a5b4fc', whiteSpace: 'nowrap', flexShrink: 0,
+                        background: '#ede9fe', borderRadius: 4, padding: '1px 6px', fontStyle: 'italic',
+                      }}>
+                        {item.sourceRecipe}
+                      </span>
+                    )}
+
                     {item.addedDate && (
                       <span style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap', flexShrink: 0 }}>
                         {item.addedDate}
@@ -779,6 +788,15 @@ function GroceryTab() {
                   <span style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     {item.store}
                   </span>
+
+                  {item.sourceRecipe && (
+                    <span title={`Added from: ${item.sourceRecipe}`} style={{
+                      fontSize: 11, color: '#c4b5fd', whiteSpace: 'nowrap', flexShrink: 0,
+                      background: '#f5f3ff', borderRadius: 4, padding: '1px 6px', fontStyle: 'italic',
+                    }}>
+                      {item.sourceRecipe}
+                    </span>
+                  )}
 
                   {(item.qty || item.unit) && (
                     <span style={{

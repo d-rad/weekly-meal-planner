@@ -199,6 +199,158 @@ function PickerWheel({ value, onChange, min = 0, max = 720, step = 5, label = ''
 
 // ---- end PickerWheel ----
 
+// ── Recipe Ingredients Editor ────────────────────────────────────────────────
+const RECIPE_UNIT_SUGGESTIONS = ['lbs', 'oz', 'pkg', 'cups', 'gallons', 'tsp', 'tbsp', 'cloves', 'slices', 'cans'];
+
+function RecipeIngredientsEditor({ ingredients, onChange, groceryHistory, onAddToGrocery }) {
+  const [addedSet, setAddedSet] = React.useState(new Set());
+  const [dropState, setDropState] = React.useState({});
+  const rowRefs = React.useRef({});
+
+  const setRowDrop = (idx, patch) =>
+    setDropState(prev => ({ ...prev, [idx]: { ...(prev[idx] || {}), ...patch } }));
+
+  // Close dropdowns when clicking outside any row
+  React.useEffect(() => {
+    const handler = (e) => {
+      Object.entries(rowRefs.current).forEach(([idx, ref]) => {
+        if (ref && !ref.contains(e.target))
+          setRowDrop(Number(idx), { showUnit: false, showItem: false });
+      });
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const rows = (ingredients && ingredients.length) ? ingredients : [{ qty: '', unit: '', item: '' }];
+
+  const updateRow = (idx, field, value) =>
+    onChange(rows.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+
+  const addRow = () => onChange([...rows, { qty: '', unit: '', item: '' }]);
+
+  const removeRow = (idx) => {
+    if (rows.length === 1) { onChange([{ qty: '', unit: '', item: '' }]); return; }
+    onChange(rows.filter((_, i) => i !== idx));
+    // Shift addedSet indexes down
+    setAddedSet(prev => {
+      const s = new Set();
+      prev.forEach(i => { if (i < idx) s.add(i); else if (i > idx) s.add(i - 1); });
+      return s;
+    });
+  };
+
+  const handleAddToGrocery = (idx) => {
+    const row = rows[idx];
+    if (!row.item.trim()) return;
+    onAddToGrocery(row);
+    setAddedSet(prev => new Set([...prev, idx]));
+    setTimeout(() => setAddedSet(prev => { const s = new Set(prev); s.delete(idx); return s; }), 2500);
+  };
+
+  const inputStyle = { padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', width: '100%' };
+  const dropStyle = { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 2, background: 'white', border: '1px solid #e2e8f0', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 400, maxHeight: 150, overflowY: 'auto' };
+
+  return (
+    <div>
+      {rows.map((row, idx) => {
+        const ds = dropState[idx] || {};
+        const unitSuggs = row.unit.trim()
+          ? RECIPE_UNIT_SUGGESTIONS.filter(u => u.toLowerCase().startsWith(row.unit.toLowerCase()))
+          : RECIPE_UNIT_SUGGESTIONS;
+        const itemSuggs = Object.keys(groceryHistory || {})
+          .filter(n => !row.item.trim() || n.toLowerCase().includes(row.item.toLowerCase()))
+          .sort().slice(0, 10);
+        const wasAdded = addedSet.has(idx);
+
+        return (
+          <div key={idx} ref={el => rowRefs.current[idx] = el}
+            style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 5 }}>
+
+            {/* Qty */}
+            <input value={row.qty} inputMode="decimal" placeholder="Qty"
+              onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) updateRow(idx, 'qty', v); }}
+              style={{ ...inputStyle, width: 55, flexShrink: 0 }} />
+
+            {/* Unit with suggestions */}
+            <div style={{ position: 'relative', width: 85, flexShrink: 0 }}>
+              <input value={row.unit} placeholder="Unit"
+                onChange={e => { updateRow(idx, 'unit', e.target.value); setRowDrop(idx, { showUnit: true, unitHl: -1 }); }}
+                onFocus={() => setRowDrop(idx, { showUnit: true })}
+                onKeyDown={e => {
+                  const len = unitSuggs.length, hl = ds.unitHl ?? -1;
+                  if (e.key === 'ArrowDown' && ds.showUnit) { e.preventDefault(); setRowDrop(idx, { unitHl: Math.min(hl+1,len-1) }); }
+                  else if (e.key === 'ArrowUp' && ds.showUnit) { e.preventDefault(); setRowDrop(idx, { unitHl: Math.max(hl-1,0) }); }
+                  else if ((e.key === 'Tab' || e.key === 'Enter') && ds.showUnit && hl >= 0) { e.preventDefault(); updateRow(idx, 'unit', unitSuggs[hl]); setRowDrop(idx, { showUnit: false, unitHl: -1 }); }
+                  else if (e.key === 'Escape') setRowDrop(idx, { showUnit: false });
+                }}
+                style={inputStyle} />
+              {ds.showUnit && unitSuggs.length > 0 && (
+                <div style={dropStyle}>
+                  {unitSuggs.map((u, i) => (
+                    <div key={u} style={{ padding: '5px 9px', fontSize: 12, cursor: 'pointer', background: i === (ds.unitHl ?? -1) ? '#e0e7ff' : 'white', borderBottom: '1px solid #f1f5f9' }}
+                      onMouseEnter={() => setRowDrop(idx, { unitHl: i })}
+                      onMouseDown={() => { updateRow(idx, 'unit', u); setRowDrop(idx, { showUnit: false, unitHl: -1 }); }}>
+                      {u}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Item with suggestions */}
+            <div style={{ position: 'relative', flex: 1 }}>
+              <input value={row.item} placeholder="Ingredient *"
+                onChange={e => { updateRow(idx, 'item', e.target.value); setRowDrop(idx, { showItem: true, itemHl: -1 }); }}
+                onFocus={() => setRowDrop(idx, { showItem: true })}
+                onKeyDown={e => {
+                  const len = itemSuggs.length, hl = ds.itemHl ?? -1;
+                  if (e.key === 'ArrowDown' && ds.showItem) { e.preventDefault(); setRowDrop(idx, { itemHl: Math.min(hl+1,len-1) }); }
+                  else if (e.key === 'ArrowUp' && ds.showItem) { e.preventDefault(); setRowDrop(idx, { itemHl: Math.max(hl-1,0) }); }
+                  else if ((e.key === 'Tab' || e.key === 'Enter') && ds.showItem && hl >= 0) { e.preventDefault(); updateRow(idx, 'item', itemSuggs[hl]); setRowDrop(idx, { showItem: false, itemHl: -1 }); }
+                  else if (e.key === 'Escape') setRowDrop(idx, { showItem: false });
+                }}
+                style={{ ...inputStyle, borderColor: '#d1d5db' }} />
+              {ds.showItem && itemSuggs.length > 0 && (
+                <div style={dropStyle}>
+                  {itemSuggs.map((n, i) => (
+                    <div key={n} style={{ padding: '5px 9px', fontSize: 12, cursor: 'pointer', background: i === (ds.itemHl ?? -1) ? '#e0e7ff' : 'white', borderBottom: '1px solid #f1f5f9' }}
+                      onMouseEnter={() => setRowDrop(idx, { itemHl: i })}
+                      onMouseDown={() => { updateRow(idx, 'item', n); setRowDrop(idx, { showItem: false, itemHl: -1 }); }}>
+                      {n}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Add to grocery */}
+            <button title={wasAdded ? 'Added!' : 'Add to grocery list'} onClick={() => handleAddToGrocery(idx)}
+              disabled={!row.item.trim()}
+              style={{ width: 28, height: 28, borderRadius: 6, border: 'none', flexShrink: 0,
+                background: wasAdded ? '#22c55e' : (row.item.trim() ? '#6366f1' : '#e5e7eb'),
+                color: 'white', fontSize: 15, cursor: row.item.trim() ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}>
+              {wasAdded ? '✓' : '+'}
+            </button>
+
+            {/* Remove row */}
+            <button onClick={() => removeRow(idx)}
+              style={{ background: 'none', border: 'none', color: '#cbd5e1', fontSize: 18, cursor: 'pointer', padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
+              onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+              onMouseLeave={e => e.currentTarget.style.color = '#cbd5e1'}>×</button>
+          </div>
+        );
+      })}
+      <button onClick={addRow}
+        style={{ marginTop: 6, width: '100%', background: 'none', border: '1px dashed #d1d5db',
+          borderRadius: 6, padding: '5px 12px', fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>
+        + Add ingredient
+      </button>
+    </div>
+  );
+}
+// ── end RecipeIngredientsEditor ──────────────────────────────────────────────
 
 function MealPlanner() {
 
@@ -319,6 +471,7 @@ function MealPlanner() {
   const [lunchHistory, setLunchHistory] = useState([]);
   const [recipes, setRecipes] = useState({});
   const [lunchRecipes, setLunchRecipes] = useState({});
+  const [groceryHistory, setGroceryHistory] = useState({});
   const [currentRecipeType, setCurrentRecipeType] = useState('dinner');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyMode, setHistoryMode] = useState('dinner'); 
@@ -352,7 +505,7 @@ function MealPlanner() {
 	cookTime: '',
     prepTime: '',
     protein: '',
-    ingredients: '',
+    ingredients: [],
     instructions: '',
 	servings: 0
   });
@@ -435,6 +588,61 @@ const showToast = (msg) => {
 };
 
 
+// Helper: parse legacy string ingredients OR ensure array format
+const parseIngredients = (raw) => {
+  if (!raw) return [{ qty: '', unit: '', item: '' }];
+  if (Array.isArray(raw)) return raw.length ? raw : [{ qty: '', unit: '', item: '' }];
+  // Legacy freeform string — each line becomes an item row
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return [{ qty: '', unit: '', item: '' }];
+  return lines.map(line => ({ qty: '', unit: '', item: line }));
+};
+
+// Add a single ingredient row to the shared grocery list
+const addIngredientToGrocery = (row) => {
+  if (!row.item.trim()) return;
+  const name = toStartCase(row.item.trim());
+  const now = new Date();
+  const mmdd = `${now.toLocaleDateString('en-US', { month: 'short' })}-${String(now.getDate()).padStart(2, '0')}`;
+  const prev = groceryHistory[name] || {};
+
+  database.ref('mealPlanner/groceryList').once('value', snap => {
+    const val = snap.val();
+    const current = val
+      ? (Array.isArray(val) ? val.filter(Boolean) : Object.values(val).filter(Boolean))
+      : [];
+
+    const newItem = {
+      id: Date.now().toString(),
+      name,
+      qty: row.qty || '',
+      unit: row.unit || '',
+      store: prev.store || 'Uncategorized',
+      checked: false,
+      addedDate: mmdd,
+      sourceRecipe: currentRecipeMeal,
+      productUrl: prev.productUrl || '',
+      notes: prev.notes || '',
+    };
+
+    database.ref('mealPlanner/groceryList').set([...current, newItem]);
+
+    // Update history — preserve existing unit/store if we have them, otherwise use recipe row values
+    const updatedHistory = {
+      ...groceryHistory,
+      [name]: {
+        unit: prev.unit || row.unit || '',
+        store: prev.store || 'Uncategorized',
+        productUrl: prev.productUrl || '',
+        notes: prev.notes || '',
+      }
+    };
+    setGroceryHistory(updatedHistory);
+    database.ref('mealPlanner/groceryHistory').set(updatedHistory);
+    showToast(`${name} added to grocery list`);
+  });
+};
+
 // Open recipe modal for a specific meal
 const openRecipeModal = (mealName, type = 'dinner') => {
   if (!mealName || !mealName.trim()) return;
@@ -449,11 +657,11 @@ const openRecipeModal = (mealName, type = 'dinner') => {
     cookTime: '',
     prepTime: '',
     protein: '',
-    ingredients: '',
+    ingredients: [],
     instructions: '',
 	servings: 0
   };
-  setCurrentRecipe(existingRecipe);
+  setCurrentRecipe({ ...existingRecipe, ingredients: parseIngredients(existingRecipe.ingredients) });
   setShowRecipeModal(true);
 };
 
@@ -499,7 +707,7 @@ const closeRecipeModal = () => {
     cookTime: '',
     prepTime: '',
     protein: '',
-    ingredients: '',
+    ingredients: [],
     instructions: '',
 	servings: 0
   });
@@ -611,6 +819,11 @@ useEffect(() => {
 	  if (data) setLunchRecipes(data);
 	  setDataLoaded((prev) => ({ ...prev, lunchRecipes: true }));
 	});
+
+    // Load grocery history for ingredient suggestions
+    database.ref('mealPlanner/groceryHistory').once('value', (snap) => {
+      setGroceryHistory(snap.val() || {});
+    });
   }, []);
   
 
@@ -1153,24 +1366,17 @@ const confirmRemoveLunch = window.confirm("Are you sure you want to remove " + i
   </div>
 </div>
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
+              <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#374151' }}>
                 Ingredients
+                <span style={{ fontSize: 11, fontWeight: 400, color: '#94a3b8', marginLeft: 8 }}>
+                  (Qty · Unit · Item — hit + to add to grocery list)
+                </span>
               </label>
-              <textarea
-                value={currentRecipe.ingredients}
-                onChange={(e) => setCurrentRecipe({ ...currentRecipe, ingredients: e.target.value })}
-                placeholder="List ingredients, one per line..."
-                rows="6"
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  boxSizing: 'border-box',
-                  resize: 'vertical',
-                  fontFamily: 'inherit'
-                }}
+              <RecipeIngredientsEditor
+                ingredients={currentRecipe.ingredients}
+                onChange={(rows) => setCurrentRecipe({ ...currentRecipe, ingredients: rows })}
+                groceryHistory={groceryHistory}
+                onAddToGrocery={addIngredientToGrocery}
               />
             </div>
 
@@ -1593,7 +1799,7 @@ onClick={(e) => {
 
 
       <div style={{ maxWidth: '100%', margin: '0 auto' }}>
-        <div className="main-layout" style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 65px)' }}>
+        <div className="main-layout" style={{ display: 'flex', gap: '12px', height: 'calc(100vh - 13px)' }}>
 
           {/* LEFT COLUMN */}
           <div className="left-col" style={{
@@ -2192,3 +2398,4 @@ onClick={(e) => {
 </div>
 );
 }
+ReactDOM.render(<MealPlanner />, document.getElementById('root'));
