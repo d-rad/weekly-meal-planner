@@ -309,17 +309,21 @@ function GroceryTab() {
   }, []);
 
   // ── Suggestions ────────────────────────────────────────────────────────────
-  const activeUncheckedNames = useMemo(() =>
-    new Set(items.filter(i => !i.checked).map(i => i.name.toLowerCase())), [items]);
+  // Compare on sanitized keys — avoids display-name/key mismatch for older entries.
+  // Only UNCHECKED (active) items block a suggestion; completed items should
+  // still appear so the user can easily re-add them.
+  const activeUncheckedKeys = useMemo(() =>
+    new Set(items.filter(i => !i.checked).map(i => toHistoryKey(i.name).toLowerCase())),
+  [items]);
 
   const itemSuggestions = useMemo(() => {
     const q = newItem.trim().toLowerCase();
     return Object.entries(history)
+      .filter(([k]) => !activeUncheckedKeys.has(k.toLowerCase()))
       .map(([k, v]) => historyDisplayName(k, v))
-      .filter(n => !activeUncheckedNames.has(n.toLowerCase()))
       .filter(n => !q || n.toLowerCase().includes(q))
       .sort();
-  }, [history, activeUncheckedNames, newItem]);
+  }, [history, activeUncheckedKeys, newItem]);
 
   const filteredUnits = newUnit.trim()
     ? UNIT_SUGGESTIONS.filter(u => u.toLowerCase().startsWith(newUnit.toLowerCase()))

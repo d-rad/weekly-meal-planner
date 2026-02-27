@@ -1,4 +1,6 @@
 dont add TBD to recipe list for meal planner tab
 revise store header area on grocery list to be slightly gray/off-white so that Costco logo is more visible
+clicking on recipe pill in grocery list opens that recipe
+click on day on weather app to pull up detailed (hourly) forecast
 
 WAY FUTURE GOAL - Auto add to cart everything with a valid link - default qty to 1 if not specified. Check off everything ordered
